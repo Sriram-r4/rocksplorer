@@ -1,11 +1,13 @@
 import { useRef, useEffect } from "react";
 import { layersData } from "../data/layersData";
+import { StarField } from "../utils/StarField";
 
 export default function GameCanvas({ onUpdate }) {
   const canvasRef = useRef(null);
   const keys = useRef({});
   const distanceRef = useRef(0);
   const animationRef = useRef(null);
+  const starFieldRef = useRef(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -14,6 +16,8 @@ export default function GameCanvas({ onUpdate }) {
     const resize = () => {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
+      if (starFieldRef.current)
+        starFieldRef.current.resize(canvas.width, canvas.height);
     };
     resize();
     window.addEventListener("resize", resize);
@@ -25,30 +29,27 @@ export default function GameCanvas({ onUpdate }) {
       h: 60,
     };
 
-    // Key handling
+    // --- Input Handling ---
     const handleKeyDown = (e) => (keys.current[e.key] = true);
     const handleKeyUp = (e) => (keys.current[e.key] = false);
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
 
-    // Color interpolation
+    // --- Helpers ---
     function interpolateColor(color1, color2, factor) {
       const c1 = parseInt(color1.slice(1), 16);
       const c2 = parseInt(color2.slice(1), 16);
-
       const r1 = (c1 >> 16) & 255,
         g1 = (c1 >> 8) & 255,
         b1 = c1 & 255;
       const r2 = (c2 >> 16) & 255,
         g2 = (c2 >> 8) & 255,
         b2 = c2 & 255;
-
       return `rgb(${Math.round(r1 + (r2 - r1) * factor)}, ${Math.round(
         g1 + (g2 - g1) * factor
       )}, ${Math.round(b1 + (b2 - b1) * factor)})`;
     }
 
-    // Find current layer
     function getLayer(distance) {
       for (let i = 0; i < layersData.length - 1; i++) {
         if (distance < layersData[i + 1].distanceKm) return i;
@@ -56,7 +57,6 @@ export default function GameCanvas({ onUpdate }) {
       return layersData.length - 1;
     }
 
-    // Draw correct upward gradient (green → blue → black)
     function drawBackground(distance) {
       const index = getLayer(distance);
       const current = layersData[index];
@@ -68,7 +68,6 @@ export default function GameCanvas({ onUpdate }) {
         1
       );
 
-      // now bottom (ground) = colorFrom, top (sky/space) = colorTo
       const bottomColor = interpolateColor(
         current.colorFrom,
         next.colorFrom,
@@ -79,9 +78,6 @@ export default function GameCanvas({ onUpdate }) {
       const gradient = ctx.createLinearGradient(0, canvas.height, 0, 0);
       gradient.addColorStop(0, bottomColor);
       gradient.addColorStop(1, topColor);
-      
-
-
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -92,7 +88,7 @@ export default function GameCanvas({ onUpdate }) {
       ctx.save();
       ctx.translate(rocket.x + rocket.w / 2, rocket.y + rocket.h / 2);
 
-      // body
+      // Rocket body
       ctx.fillStyle = "white";
       ctx.beginPath();
       ctx.moveTo(0, -rocket.h / 2);
@@ -101,7 +97,7 @@ export default function GameCanvas({ onUpdate }) {
       ctx.closePath();
       ctx.fill();
 
-      // flame
+      // Flame
       const flameHeight = 20 + Math.random() * 10;
       const flameWidth = 10 + Math.random() * 5;
       const gradient = ctx.createLinearGradient(
@@ -124,49 +120,64 @@ export default function GameCanvas({ onUpdate }) {
       ctx.restore();
     }
 
-    // Update logic
+    // --- Initialize Star Field ---
+    starFieldRef.current = new StarField(ctx, canvas.width, canvas.height, 250);
+
     function update() {
       let baseSpeed = 5;
-      const isBoosting = keys.current["Shift"]; // check if Shift is pressed
-
-      // Boost speed when Shift + Up (or W) is pressed
+      const isBoosting = keys.current["Shift"];
       if ((keys.current["ArrowUp"] || keys.current["w"]) && isBoosting) {
-        baseSpeed *= 200000; // 5x speed
+        baseSpeed *= 200000;
       }
 
       if (keys.current["ArrowLeft"] || keys.current["a"]) rocket.x -= baseSpeed;
-      if (keys.current["ArrowRight"] || keys.current["d"])
-        rocket.x += baseSpeed;
+      if (keys.current["ArrowRight"] || keys.current["d"]) rocket.x += baseSpeed;
 
       if (keys.current["ArrowUp"] || keys.current["w"]) {
         rocket.y -= baseSpeed;
-        distanceRef.current += baseSpeed * 10; // Increase per frame
+        distanceRef.current += baseSpeed * 10;
       }
-    //   if (keys.current["ArrowDown"] || keys.current["s"]) {
-    //     rocket.y += baseSpeed;
-    //     distanceRef.current = Math.max(0, distanceRef.current - baseSpeed * 10);
-    //   }
 
-      // Keep oo
-      // rocket inside screen
       rocket.x = Math.max(0, Math.min(canvas.width - rocket.w, rocket.x));
       rocket.y = Math.max(0, Math.min(canvas.height - rocket.h, rocket.y));
     }
 
-    function loop() {
-      update();
-      const layer = drawBackground(distanceRef.current);
-      drawRocket();
+  function loop() {
+  update();
+  const layer = drawBackground(distanceRef.current);
+  const isMoving = keys.current["ArrowUp"] || keys.current["w"];
 
-      onUpdate({
-        distanceKm: distanceRef.current,
-        distanceAU: (distanceRef.current / 1.496e8).toFixed(6),
-        layer: layer.name,
-        place: layer.place,
-      });
+  // --- Star visibility logic ---
+  const showStars =
+    layer.name !== "Ground Level" &&
+    layer.name !== "Troposphere" &&
+    layer.name !== "Stratosphere" &&
+    layer.name !== "Mesosphere" &&
+    layer.name !== "Thermosphere";
 
-      animationRef.current = requestAnimationFrame(loop);
-    }
+  // Gradual fade-in of stars as we move upward
+  if (starFieldRef.current) {
+    // Smooth transition (fadeProgress between 0–1)
+    const targetFade = showStars ? 1 : 0;
+    starFieldRef.current.fadeProgress += (targetFade - starFieldRef.current.fadeProgress) * 0.02;
+
+    // Update and draw stars
+    starFieldRef.current.update(isMoving, 1);
+    starFieldRef.current.draw(isMoving);
+  }
+
+  drawRocket();
+
+  onUpdate({
+    distanceKm: distanceRef.current,
+    distanceAU: (distanceRef.current / 1.496e8).toFixed(6),
+    layer: layer.name,
+    place: layer.place,
+  });
+
+  animationRef.current = requestAnimationFrame(loop);
+}
+
 
     loop();
 
