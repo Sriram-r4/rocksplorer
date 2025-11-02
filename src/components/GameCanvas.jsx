@@ -1,44 +1,116 @@
-import { useRef, useEffect } from "react";
+// src/components/GameCanvas.jsx
+import { useRef, useEffect, useState } from "react";
 import { layersData } from "../data/layersData";
 import { StarField } from "../utils/StarField";
 
+/**
+ * GameCanvas
+ * - Visuals driven by visualScrollRef (pixels-like accumulator) so star/obstacle motion remains perceptible
+ * - distanceRef keeps the "true" astronomical distance for HUD only
+ * - Sci-fi plasma burst on collision (blue/purple particles)
+ */
 export default function GameCanvas({ onUpdate }) {
-  const canvasRef = useRef(null);
+  const gameCanvasRef = useRef(null);
+  const starCanvasRef = useRef(null);
+
   const keys = useRef({});
-  const distanceRef = useRef(0);
+  const distanceRef = useRef(0); // true distance in km (for HUD)
+  const visualScrollRef = useRef(0); // visual scroll accumulator (px-like)
+  const visualSpeedRef = useRef(0); // current visual speed in px/ms
   const animationRef = useRef(null);
   const starFieldRef = useRef(null);
+  const obstaclesRef = useRef([]);
+  const spawnTimerRef = useRef(0);
+  const particlesRef = useRef([]); // for explosion effect
+  const [gameOver, setGameOver] = useState(false);
+  const explosionRef = useRef({ active: false, t: 0 });
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
+    // Defensive check
+    if (!Array.isArray(layersData) || layersData.length === 0) {
+      console.warn(
+        "layersData missing — GameCanvas will not start until layersData is provided."
+      );
+      return;
+    }
 
+    const gameCanvas = gameCanvasRef.current;
+    const starCanvas = starCanvasRef.current;
+    if (!gameCanvas || !starCanvas) return;
+
+    const ctx = gameCanvas.getContext("2d");
+    const starCtx = starCanvas.getContext("2d");
+
+    // ----- Resize -----
     const resize = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
+      gameCanvas.width = window.innerWidth;
+      gameCanvas.height = window.innerHeight;
+      starCanvas.width = window.innerWidth;
+      starCanvas.height = window.innerHeight;
       if (starFieldRef.current)
-        starFieldRef.current.resize(canvas.width, canvas.height);
+        starFieldRef.current.resize(starCanvas.width, starCanvas.height);
     };
     resize();
     window.addEventListener("resize", resize);
 
+    // ----- Rocket -----
     const rocket = {
-      x: canvas.width / 2 - 20,
-      y: canvas.height - 100,
+      x: gameCanvas.width / 2 - 20,
+      y: gameCanvas.height * 0.7,
       w: 40,
       h: 60,
+      vx: 0,
+      vy: 0,
+      targetVy: -0.02,
+      baseClimb: -0.02,
+      thrustSpeed: -0.1,
+      boostSpeed: -0.26, // slightly stronger boost for thrill
     };
 
-    // --- Input Handling ---
-    const handleKeyDown = (e) => (keys.current[e.key] = true);
-    const handleKeyUp = (e) => (keys.current[e.key] = false);
+    // ----- Input -----
+    const handleKeyDown = (e) => {
+      keys.current[e.key] = true;
+    };
+    const handleKeyUp = (e) => {
+      keys.current[e.key] = false;
+    };
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
 
-    // --- Helpers ---
+    // ----- Restart handlers -----
+    const restartGame = () => {
+      setGameOver(false);
+      obstaclesRef.current = [];
+      particlesRef.current = [];
+      explosionRef.current = { active: false, t: 0 };
+      distanceRef.current = 0;
+      visualScrollRef.current = 0;
+      visualSpeedRef.current = 0;
+      rocket.x = gameCanvas.width / 2 - 20;
+      rocket.vx = 0;
+      rocket.vy = 0;
+      rocket.targetVy = rocket.baseClimb;
+      spawnTimerRef.current = 0;
+      // resume loop if it was stopped
+      if (!animationRef.current)
+        animationRef.current = requestAnimationFrame(loop);
+    };
+
+    const handleRestartKey = (e) => {
+      if (gameOver && (e.key === "r" || e.key === "R")) restartGame();
+    };
+    const handleRestartClick = () => {
+      if (gameOver) restartGame();
+    };
+    window.addEventListener("keydown", handleRestartKey);
+    window.addEventListener("click", handleRestartClick);
+
+    // ----- Helpers -----
     function interpolateColor(color1, color2, factor) {
-      const c1 = parseInt(color1.slice(1), 16);
-      const c2 = parseInt(color2.slice(1), 16);
+      const safe1 = typeof color1 === "string" ? color1 : "#000000";
+      const safe2 = typeof color2 === "string" ? color2 : "#000000";
+      const c1 = parseInt(safe1.slice(1), 16);
+      const c2 = parseInt(safe2.slice(1), 16);
       const r1 = (c1 >> 16) & 255,
         g1 = (c1 >> 8) & 255,
         b1 = c1 & 255;
@@ -50,45 +122,412 @@ export default function GameCanvas({ onUpdate }) {
       )}, ${Math.round(b1 + (b2 - b1) * factor)})`;
     }
 
+    // ----- Layer helpers (defensive) -----
     function getLayer(distance) {
+      if (!Array.isArray(layersData) || layersData.length === 0) return 0;
       for (let i = 0; i < layersData.length - 1; i++) {
-        if (distance < layersData[i + 1].distanceKm) return i;
+        const nextDist = layersData[i + 1]?.distanceKm ?? Infinity;
+        if (distance < nextDist) return i;
       }
       return layersData.length - 1;
     }
 
-    function drawBackground(distance) {
-      const index = getLayer(distance);
-      const current = layersData[index];
-      const next = layersData[index + 1] || current;
-
-      const range = next.distanceKm - current.distanceKm || 1;
-      const factor = Math.min(
-        Math.max((distance - current.distanceKm) / range, 0),
-        1
-      );
+    function drawGradientForLayer(distance) {
+      const idx = getLayer(distance);
+      const current = layersData[idx] ?? layersData[0];
+      const next = layersData[idx + 1] ?? current;
+      const curKm =
+        typeof current.distanceKm === "number" ? current.distanceKm : 0;
+      const nextKm =
+        typeof next.distanceKm === "number" ? next.distanceKm : curKm + 1;
+      const range = Math.max(1, nextKm - curKm);
+      const factor = Math.min(Math.max((distance - curKm) / range, 0), 1);
 
       const bottomColor = interpolateColor(
-        current.colorFrom,
-        next.colorFrom,
+        current.colorFrom ?? "#000000",
+        next.colorFrom ?? "#000000",
         factor
       );
-      const topColor = interpolateColor(current.colorTo, next.colorTo, factor);
+      const topColor = interpolateColor(
+        current.colorTo ?? "#000000",
+        next.colorTo ?? "#000000",
+        factor
+      );
 
-      const gradient = ctx.createLinearGradient(0, canvas.height, 0, 0);
+      const gradient = starCtx.createLinearGradient(0, starCanvas.height, 0, 0);
       gradient.addColorStop(0, bottomColor);
       gradient.addColorStop(1, topColor);
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      starCtx.fillStyle = gradient;
+      starCtx.fillRect(0, 0, starCanvas.width, starCanvas.height);
 
-      return current;
+      return { current, next, factor, idx };
     }
 
+    // ----- StarField -----
+    if (!starFieldRef.current)
+      starFieldRef.current = new StarField(
+        starCtx,
+        starCanvas.width,
+        starCanvas.height,
+        160
+      );
+
+    // ----- Macro regions (tuned for smoother distance scaling) -----
+    const macroRegions = [
+      {
+        name: "EARTH & ATMOSPHERE",
+        start: layersData[0]?.distanceKm ?? 0,
+        end:
+          layersData.find((l) => l.name === "Exosphere")?.distanceKm ?? 10000,
+        durationSec: 35,
+        baseSpeedFactor: 1.0,
+      },
+      {
+        name: "EARTH ORBIT & SOLAR SYSTEM",
+        start:
+          layersData.find((l) => l.name === "Low Earth Orbit")?.distanceKm ??
+          10000,
+        end:
+          layersData.find((l) => l.name === "Heliopause")?.distanceKm ?? 2e10,
+        durationSec: 50,
+        baseSpeedFactor: 1.15,
+      },
+      {
+        name: "INTERSTELLAR SPACE",
+        start:
+          layersData.find((l) => l.name === "Local Interstellar Cloud")
+            ?.distanceKm ?? 2e10,
+        end:
+          layersData.find((l) => l.name === "Galactic Halo")?.distanceKm ??
+          9e17,
+        durationSec: 70,
+        baseSpeedFactor: 1.35,
+      },
+      {
+        name: "COSMIC SCALE",
+        start:
+          layersData.find((l) => l.name === "Local Group")?.distanceKm ?? 9e17,
+        end: Infinity,
+        durationSec: 80,
+        baseSpeedFactor: 1.6,
+      },
+    ];
+
+    function getMacroRegionIndex(distance) {
+      for (let i = 0; i < macroRegions.length; i++) {
+        const r = macroRegions[i];
+        if (distance >= r.start && distance < r.end) return i;
+      }
+      return macroRegions.length - 1;
+    }
+
+    // ----- Obstacles -----
+    function spawnObstacle(regionIndex) {
+      const baseSize = Math.random() * 28 + 20;
+      const sizeScale = 1 + regionIndex * 0.5;
+      const size = Math.round(baseSize * sizeScale);
+
+      const x = Math.max(
+        0,
+        Math.min(
+          gameCanvas.width - size,
+          Math.random() * (gameCanvas.width - size)
+        )
+      );
+      const baseSpeed = 1.8 + regionIndex * 1.8;
+      const speed = baseSpeed + Math.random() * (0.9 + regionIndex * 0.7);
+
+      const typeRoll = Math.random();
+      const type =
+        typeRoll < 0.12 ? "satellite" : typeRoll < 0.62 ? "rock" : "debris";
+
+      obstaclesRef.current.push({
+        x,
+        y: -size - Math.random() * 120, // spawn slightly off-screen for stagger
+        size,
+        speed,
+        type,
+      });
+    }
+
+    function updateObstacles(deltaMs, visualSpeed, regionIndex) {
+      spawnTimerRef.current += deltaMs;
+
+      const baseIntervals = [1500, 1200, 900, 700];
+      const safeIndex = Math.max(
+        0,
+        Math.min(baseIntervals.length - 1, regionIndex)
+      );
+      const base = baseIntervals[safeIndex];
+
+      // interval reduces with region index and visual speed, but clamped
+      const interval = Math.max(
+        300,
+        base / (1 + regionIndex * 0.7 + Math.abs(visualSpeed) * 0.01)
+      );
+
+      if (spawnTimerRef.current > interval) {
+        if (regionIndex >= 2 && Math.random() < 0.22) {
+          const burst = 1 + Math.floor(Math.random() * (2 + regionIndex));
+          for (let i = 0; i < burst; i++) spawnObstacle(regionIndex);
+        } else {
+          spawnObstacle(regionIndex);
+        }
+        spawnTimerRef.current = 0;
+      }
+
+      // move obstacles downward using visualSpeed (not astronomical distance)
+      obstaclesRef.current.forEach((obs) => {
+        // motion = obstacle own speed + small fraction of visual scroll, clamped
+        const down =
+          obs.speed * (0.6 + regionIndex * 0.18) +
+          Math.min(visualSpeed * 0.018, 45);
+        obs.y += down;
+      });
+
+      // cull offscreen with buffer
+      obstaclesRef.current = obstaclesRef.current.filter(
+        (obs) => obs.y < gameCanvas.height + obs.size * 3
+      );
+    }
+
+    function drawObstacles() {
+      ctx.save();
+      obstaclesRef.current.forEach((obs) => {
+        if (obs.type === "satellite") {
+          ctx.fillStyle = "rgba(200,220,255,0.95)";
+          ctx.fillRect(obs.x, obs.y, obs.size * 1.1, obs.size * 0.6);
+          ctx.fillStyle = "rgba(150,170,200,0.95)";
+          ctx.fillRect(
+            obs.x + obs.size * 0.72,
+            obs.y + obs.size * 0.15,
+            obs.size * 0.1,
+            obs.size * 0.32
+          );
+        } else if (obs.type === "debris") {
+          ctx.fillStyle = "rgba(255,180,100,0.95)";
+          ctx.fillRect(obs.x, obs.y, obs.size, obs.size * 0.6);
+        } else {
+          ctx.fillStyle = "rgba(255,100,100,0.95)";
+          ctx.beginPath();
+          ctx.rect(obs.x, obs.y, obs.size, obs.size);
+          ctx.fill();
+        }
+      });
+      ctx.restore();
+    }
+
+    function checkCollision() {
+      return obstaclesRef.current.some((obs) => {
+        const w = obs.size * (obs.type === "satellite" ? 1.06 : 1);
+        const h = obs.size * (obs.type === "satellite" ? 0.6 : 1);
+        return (
+          rocket.x < obs.x + w &&
+          rocket.x + rocket.w > obs.x &&
+          rocket.y < obs.y + h &&
+          rocket.y + rocket.h > obs.y
+        );
+      });
+    }
+
+    // ----- Particles: Sci-fi Plasma Burst -----
+    function createPlasmaBurst(cx, cy) {
+      particlesRef.current = [];
+      const count = 48 + Math.floor(Math.random() * 24);
+      for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 1 + Math.random() * 8;
+        const life = 700 + Math.random() * 600; // ms
+        const size = 1 + Math.random() * 3;
+        // color palette: electric cyan -> deep purple
+        const mix = Math.random();
+        const r = Math.round(20 + 120 * mix);
+        const g = Math.round(180 + 40 * (1 - mix));
+        const b = Math.round(255 - 40 * mix);
+        particlesRef.current.push({
+          x: cx,
+          y: cy,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          life,
+          age: 0,
+          size,
+          color: `rgba(${r},${g},${b},`,
+          flick: Math.random() * 0.6 + 0.4,
+        });
+      }
+      explosionRef.current = { active: true, t: 0 };
+    }
+
+    function updateParticles(deltaMs) {
+      if (!explosionRef.current.active) return;
+      explosionRef.current.t += deltaMs;
+      particlesRef.current.forEach((p) => {
+        // magnetic pull center effect for plasma swirl
+        p.vx *= 0.98;
+        p.vy *= 0.98;
+        p.vy += 0.02; // slight downward drift
+        p.x += p.vx + (Math.random() - 0.5) * 0.3;
+        p.y += p.vy + (Math.random() - 0.5) * 0.3;
+        p.age += deltaMs;
+      });
+      // remove dead
+      particlesRef.current = particlesRef.current.filter((p) => p.age < p.life);
+      if (particlesRef.current.length === 0)
+        explosionRef.current.active = false;
+    }
+
+    function drawParticles() {
+      if (!explosionRef.current.active) return;
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      particlesRef.current.forEach((p) => {
+        const alpha = Math.max(0, 1 - p.age / p.life);
+        const glow = Math.min(1, alpha * 0.9) * p.flick;
+        ctx.beginPath();
+        ctx.fillStyle = `${p.color}${(0.6 * glow).toFixed(3)})`;
+        ctx.arc(p.x, p.y, p.size * 1.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // inner bright dot
+        ctx.beginPath();
+        ctx.fillStyle = `${p.color}${(0.9 * glow).toFixed(3)})`;
+        ctx.arc(p.x, p.y, p.size * 0.75, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.restore();
+    }
+
+    // ----- Distance advancement (keeps core behavior but uses balanced region timings) -----
+    const PLAYER_MULT_NONE = 1;
+    const PLAYER_MULT_UP = 2;
+    const PLAYER_MULT_BOOST = 5;
+
+    function advanceDistance(deltaMs) {
+      let remainingMs = deltaMs;
+      let safety = 0;
+      while (remainingMs > 0 && safety < 4) {
+        safety++;
+
+        const regionIdx = getMacroRegionIndex(distanceRef.current);
+        const region = macroRegions[regionIdx];
+
+        const regionWidthKm =
+          region.end === Infinity
+            ? Math.max(1e6, region.start * 0.02)
+            : Math.max(1, region.end - region.start);
+
+        const regionMs = Math.max(1000, region.durationSec * 1000);
+        const baseFractionPerMs = 1 / regionMs;
+        const fractionPerMs = baseFractionPerMs * (region.baseSpeedFactor || 1);
+
+        const upPressed = keys.current["ArrowUp"] || keys.current["w"];
+        const boostPressed =
+          keys.current["Shift"] ||
+          keys.current["ShiftLeft"] ||
+          keys.current["ShiftRight"];
+        const playerMultiplier = upPressed
+          ? boostPressed
+            ? PLAYER_MULT_BOOST
+            : PLAYER_MULT_UP
+          : PLAYER_MULT_NONE;
+
+        const effectiveFractionPerMs = fractionPerMs * playerMultiplier;
+
+        const progressInRegion = Math.min(
+          1,
+          (distanceRef.current - region.start) / (regionWidthKm || 1)
+        );
+        const fractionRemaining = Math.max(0, 1 - progressInRegion);
+        const msToFinishAtEffective =
+          fractionRemaining / Math.max(1e-9, effectiveFractionPerMs);
+
+        const msStep = Math.min(remainingMs, msToFinishAtEffective);
+
+        const fractionStep = effectiveFractionPerMs * msStep;
+        const kmStep = fractionStep * regionWidthKm;
+
+        distanceRef.current += kmStep;
+        remainingMs -= msStep;
+
+        if (msStep === msToFinishAtEffective) {
+          if (region.end !== Infinity)
+            distanceRef.current = Math.max(
+              distanceRef.current,
+              region.end - 1e-6
+            );
+        }
+
+        if (fractionStep <= 0) break;
+      }
+    }
+
+    // ----- Physics update (unchanged controls, but updates visual speed) -----
+    function updatePhysics(deltaMs) {
+      const upPressed = keys.current["ArrowUp"] || keys.current["w"];
+      const boostPressed =
+        keys.current["Shift"] ||
+        keys.current["ShiftLeft"] ||
+        keys.current["ShiftRight"];
+
+      if (upPressed && boostPressed) rocket.targetVy = rocket.boostSpeed;
+      else if (upPressed) rocket.targetVy = rocket.thrustSpeed;
+      else rocket.targetVy = rocket.baseClimb;
+
+      // smooth vertical interpolation
+      const smooth = 0.08;
+      rocket.vy += (rocket.targetVy - rocket.vy) * smooth;
+
+      // horizontal movement
+      if (keys.current["ArrowLeft"] || keys.current["a"]) rocket.vx -= 0.22;
+      if (keys.current["ArrowRight"] || keys.current["d"]) rocket.vx += 0.22;
+      rocket.vx *= 0.96;
+      rocket.x += rocket.vx;
+      rocket.x = Math.max(0, Math.min(gameCanvas.width - rocket.w, rocket.x));
+
+      // advance "real" distance
+      advanceDistance(deltaMs);
+
+      // compute visual speed (normalized) from region factors and player action
+      const regionIdx = getMacroRegionIndex(distanceRef.current);
+      const region = macroRegions[regionIdx];
+      const regionMs = Math.max(1000, region.durationSec * 1000);
+      const baseFractionPerMs = 1 / regionMs;
+      const fracPerMs = baseFractionPerMs * (region.baseSpeedFactor || 1);
+
+      // visualAcceleration is a small number that maps to pixels/ms feel
+      const baseVisual = 0.02 + regionIdx * 0.006; // base visual per ms increases with region
+      const thrustFactor = Math.max(0, -rocket.vy) * 0.85; // vertical input contributes
+      const boostFactor = keys.current["Shift"] ? 1.2 : 1;
+
+      // combine to get a smooth visual speed (pixels per ms)
+      const targetVisualSpeed =
+        (baseVisual + fracPerMs * 0.18) *
+        (1 + thrustFactor) *
+        boostFactor *
+        1.0;
+
+      // smooth visual speed
+      visualSpeedRef.current +=
+        (targetVisualSpeed - visualSpeedRef.current) * 0.06;
+
+      // advance visual scroll by visualSpeed * deltaMs (clamped)
+      const step = Math.max(
+        0,
+        Math.min(visualSpeedRef.current * deltaMs * 1.0, 200)
+      ); // clamp per-frame step
+      visualScrollRef.current += step;
+
+      // limit visualScrollRef to prevent float runaway (wrap)
+      if (visualScrollRef.current > 1e7) visualScrollRef.current %= 1e7;
+    }
+
+    // ----- Draw rocket -----
     function drawRocket() {
       ctx.save();
+      const tilt = Math.max(-0.28, Math.min(0.28, rocket.vx * 0.022));
       ctx.translate(rocket.x + rocket.w / 2, rocket.y + rocket.h / 2);
-
-      // Rocket body
+      ctx.rotate(tilt);
       ctx.fillStyle = "white";
       ctx.beginPath();
       ctx.moveTo(0, -rocket.h / 2);
@@ -97,97 +536,203 @@ export default function GameCanvas({ onUpdate }) {
       ctx.closePath();
       ctx.fill();
 
-      // Flame
-      const flameHeight = 20 + Math.random() * 10;
-      const flameWidth = 10 + Math.random() * 5;
-      const gradient = ctx.createLinearGradient(
+      const thrustPower = Math.min(
+        1,
+        Math.abs(rocket.vy) / Math.abs(rocket.boostSpeed)
+      );
+      const flameHeight = 18 + Math.random() * 6 + 42 * thrustPower;
+      const flameWidth = 10 + Math.random() * 3 + 8 * thrustPower;
+      const grad = ctx.createLinearGradient(
         0,
         rocket.h / 2,
         0,
         rocket.h / 2 + flameHeight
       );
-      gradient.addColorStop(0, "orange");
-      gradient.addColorStop(1, "red");
-
-      ctx.fillStyle = gradient;
+      grad.addColorStop(
+        0,
+        `rgba(255,230,140,${0.9 * (0.6 + thrustPower * 0.4)})`
+      );
+      grad.addColorStop(1, "rgba(255,120,40,0)");
+      ctx.fillStyle = grad;
       ctx.beginPath();
       ctx.moveTo(0, rocket.h / 2);
       ctx.lineTo(-flameWidth / 2, rocket.h / 2 + flameHeight);
       ctx.lineTo(flameWidth / 2, rocket.h / 2 + flameHeight);
       ctx.closePath();
       ctx.fill();
-
       ctx.restore();
     }
 
-    // --- Initialize Star Field ---
-    starFieldRef.current = new StarField(ctx, canvas.width, canvas.height, 250);
+    // ----- Main loop -----
+    let lastTime = 0;
+    function loop(timestamp) {
+      if (!lastTime) lastTime = timestamp;
+      const deltaMs = Math.min(60, timestamp - lastTime); // ms clamp
+      lastTime = timestamp;
 
-    function update() {
-      let baseSpeed = 5;
-      const isBoosting = keys.current["Shift"];
-      if ((keys.current["ArrowUp"] || keys.current["w"]) && isBoosting) {
-        baseSpeed *= 200000;
+      // if not game over, update mechanics
+      if (!gameOver) {
+        updatePhysics(deltaMs);
       }
 
-      if (keys.current["ArrowLeft"] || keys.current["a"]) rocket.x -= baseSpeed;
-      if (keys.current["ArrowRight"] || keys.current["d"]) rocket.x += baseSpeed;
+      // draw gradient for layer once (star canvas)
+      const { idx: layerIdx } = drawGradientForLayer(distanceRef.current);
 
-      if (keys.current["ArrowUp"] || keys.current["w"]) {
-        rocket.y -= baseSpeed;
-        distanceRef.current += baseSpeed * 10;
+      // clear game canvas only
+      ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
+
+      // 1) obstacles (game canvas)
+      updateObstacles(
+        deltaMs,
+        visualSpeedRef.current,
+        getMacroRegionIndex(distanceRef.current)
+      );
+      drawObstacles();
+
+      // 2) starfield (draw on star canvas)
+      if (starFieldRef.current) {
+        // target fade mapping (earlier start, becomes strong in higher layers)
+        const targetFade =
+          layerIdx >= 3 ? 1 : layerIdx === 2 ? 0.8 : layerIdx === 1 ? 0.36 : 0;
+        // quickly adapt to give snappy feel
+        starFieldRef.current.fadeProgress +=
+          (targetFade - starFieldRef.current.fadeProgress) * 0.045;
+
+        // star scroll speed derives from base motion + boost streaks
+        // star scroll speed derives from base motion + boost streaks
+        // --- STARFIELD MOTION LOGIC --- //
+// --- STARFIELD MOTION LOGIC --- //
+const movingUp =
+  keys.current["ArrowUp"] ||
+  keys.current["w"] ||
+  keys.current["W"];
+
+const movingLeft =
+  keys.current["ArrowLeft"] ||
+  keys.current["a"] ||
+  keys.current["A"];
+
+const movingRight =
+  keys.current["ArrowRight"] ||
+  keys.current["d"] ||
+  keys.current["D"];
+
+const boostActive =
+  movingUp &&
+  (keys.current["Shift"] || keys.current["ShiftLeft"] || keys.current["ShiftRight"]);
+
+// base drift (always moving)
+const baseDrift = visualSpeedRef.current * 25;
+
+// dynamic speed logic
+let starSpeed = baseDrift;
+if (movingUp) starSpeed = baseDrift * 1.5;      // faster when ascending
+if (boostActive) starSpeed = baseDrift * 3.0;   // max during boost
+
+// subtle horizontal drift for cinematic feel
+const horizontalDrift = (movingRight ? 1 : movingLeft ? -1 : 0) * (baseDrift * 0.4);
+
+// pass combined motion to starfield
+starFieldRef.current.update(true, starSpeed * 0.6, horizontalDrift);
+starFieldRef.current.draw(boostActive);
+
       }
 
-      rocket.x = Math.max(0, Math.min(canvas.width - rocket.w, rocket.x));
-      rocket.y = Math.max(0, Math.min(canvas.height - rocket.h, rocket.y));
+      // 3) rocket (top)
+      drawRocket();
+
+      // 4) particles (if explosion active)
+      updateParticles(deltaMs);
+      drawParticles();
+
+      // collision check (only active while not game over)
+      if (!gameOver && checkCollision()) {
+        // create plasma burst at rocket center
+        const cx = rocket.x + rocket.w / 2;
+        const cy = rocket.y + rocket.h / 2;
+        createPlasmaBurst(cx, cy);
+        setGameOver(true);
+      }
+
+      // report HUD/parent
+      const layerInfo =
+        layersData[
+          Math.max(
+            0,
+            Math.min(layersData.length - 1, getLayer(distanceRef.current))
+          )
+        ] || {};
+      const regionName =
+        macroRegions[getMacroRegionIndex(distanceRef.current)]?.name;
+      onUpdate?.({
+        distanceKm: Math.floor(distanceRef.current),
+        distanceAU: (distanceRef.current / 1.496e8).toFixed(6),
+        layer: layerInfo.name,
+        place: layerInfo.place,
+        region: regionName,
+      });
+
+      // overlay gameover text with slight fade after explosion begins
+      if (gameOver) {
+        // fade background overlay in proportion to explosion progress (t capped)
+        const alpha = Math.min(0.7, 0.25 + explosionRef.current.t / 900);
+        ctx.fillStyle = `rgba(0,0,0,${alpha})`;
+        ctx.fillRect(0, 0, gameCanvas.width, gameCanvas.height);
+
+        ctx.fillStyle = "white";
+        ctx.font = "48px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(
+          "GAME OVER",
+          gameCanvas.width / 2,
+          gameCanvas.height / 2 - 20
+        );
+        ctx.font = "22px sans-serif";
+        ctx.fillText(
+          "Click or press 'R' to restart",
+          gameCanvas.width / 2,
+          gameCanvas.height / 2 + 24
+        );
+      }
+
+      animationRef.current = requestAnimationFrame(loop);
     }
 
-  function loop() {
-  update();
-  const layer = drawBackground(distanceRef.current);
-  const isMoving = keys.current["ArrowUp"] || keys.current["w"];
+    animationRef.current = requestAnimationFrame(loop);
 
-  // --- Star visibility logic ---
-  const showStars =
-    layer.name !== "Ground Level" &&
-    layer.name !== "Troposphere" &&
-    layer.name !== "Stratosphere" &&
-    layer.name !== "Mesosphere" &&
-    layer.name !== "Thermosphere";
-
-  // Gradual fade-in of stars as we move upward
-  if (starFieldRef.current) {
-    // Smooth transition (fadeProgress between 0–1)
-    const targetFade = showStars ? 1 : 0;
-    starFieldRef.current.fadeProgress += (targetFade - starFieldRef.current.fadeProgress) * 0.02;
-
-    // Update and draw stars
-    starFieldRef.current.update(isMoving, 1);
-    starFieldRef.current.draw(isMoving);
-  }
-
-  drawRocket();
-
-  onUpdate({
-    distanceKm: distanceRef.current,
-    distanceAU: (distanceRef.current / 1.496e8).toFixed(6),
-    layer: layer.name,
-    place: layer.place,
-  });
-
-  animationRef.current = requestAnimationFrame(loop);
-}
-
-
-    loop();
-
+    // ----- Cleanup -----
     return () => {
       cancelAnimationFrame(animationRef.current);
+      animationRef.current = null;
       window.removeEventListener("resize", resize);
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("keydown", handleRestartKey);
+      window.removeEventListener("click", handleRestartClick);
     };
-  }, [onUpdate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onUpdate, gameOver]);
 
-  return <canvas ref={canvasRef} className="absolute inset-0" />;
+  // ----- JSX -----
+  return (
+    <div
+      className="absolute inset-0"
+      style={{
+        pointerEvents: "auto",
+      }}
+    >
+      <canvas
+        ref={starCanvasRef}
+        id="star-canvas"
+        className="absolute inset-0"
+        style={{ zIndex: 0, position: "absolute", inset: 0 }}
+      />
+      <canvas
+        ref={gameCanvasRef}
+        id="game-canvas"
+        className="absolute inset-0"
+        style={{ zIndex: 1, position: "absolute", inset: 0 }}
+      />
+    </div>
+  );
 }
