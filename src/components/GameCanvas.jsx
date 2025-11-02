@@ -589,57 +589,199 @@ export default function GameCanvas({ onUpdate }) {
       );
       drawObstacles();
 
+      // const currentLayer =
+      //   layersData[layerIdx]?.name || `Unknown Layer (${layerIdx})`;
+
+      // if (
+      //   !window._lastLoggedLayer ||
+      //   window._lastLoggedLayer !== currentLayer
+      // ) {
+      //   console.log(`🛰️ Layer Changed → ${currentLayer} (Index: ${layerIdx})`);
+      //   window._lastLoggedLayer = currentLayer;
+      // }
       // 2) starfield (draw on star canvas)
       if (starFieldRef.current) {
-        // target fade mapping (earlier start, becomes strong in higher layers)
-        const targetFade =
-          layerIdx >= 3 ? 1 : layerIdx === 2 ? 0.8 : layerIdx === 1 ? 0.36 : 0;
-        // quickly adapt to give snappy feel
+        // --- STARFIELD VISIBILITY LOGIC --- //
+        let starAlpha = 0;
+        if (layerIdx <= 1) starAlpha = 0; // No stars in ground/troposphere
+        else if (layerIdx === 5)
+          starAlpha = 0.4; // Subtle start in stratosphere
+        else if (layerIdx >= 6) starAlpha = 1; // Full stars beyond
+
+        // Smooth fade transition
         starFieldRef.current.fadeProgress +=
-          (targetFade - starFieldRef.current.fadeProgress) * 0.045;
+          (starAlpha - starFieldRef.current.fadeProgress) * 0.05;
+        const effectiveAlpha = starFieldRef.current.fadeProgress;
 
-        // star scroll speed derives from base motion + boost streaks
-        // star scroll speed derives from base motion + boost streaks
         // --- STARFIELD MOTION LOGIC --- //
-// --- STARFIELD MOTION LOGIC --- //
-const movingUp =
-  keys.current["ArrowUp"] ||
-  keys.current["w"] ||
-  keys.current["W"];
+        const movingUp =
+          keys.current["ArrowUp"] || keys.current["w"] || keys.current["W"];
+        const movingLeft =
+          keys.current["ArrowLeft"] || keys.current["a"] || keys.current["A"];
+        const movingRight =
+          keys.current["ArrowRight"] || keys.current["d"] || keys.current["D"];
+        const boostActive =
+          movingUp &&
+          (keys.current["Shift"] ||
+            keys.current["ShiftLeft"] ||
+            keys.current["ShiftRight"]);
 
-const movingLeft =
-  keys.current["ArrowLeft"] ||
-  keys.current["a"] ||
-  keys.current["A"];
+        const baseDrift = visualSpeedRef.current * 25;
+        let starSpeed = baseDrift;
+        if (movingUp) starSpeed = baseDrift * 1.5;
+        if (boostActive) starSpeed = baseDrift * 3.0;
 
-const movingRight =
-  keys.current["ArrowRight"] ||
-  keys.current["d"] ||
-  keys.current["D"];
+        const horizontalDrift =
+          (movingRight ? 1 : movingLeft ? -1 : 0) * (baseDrift * 0.4);
 
-const boostActive =
-  movingUp &&
-  (keys.current["Shift"] || keys.current["ShiftLeft"] || keys.current["ShiftRight"]);
-
-// base drift (always moving)
-const baseDrift = visualSpeedRef.current * 25;
-
-// dynamic speed logic
-let starSpeed = baseDrift;
-if (movingUp) starSpeed = baseDrift * 1.5;      // faster when ascending
-if (boostActive) starSpeed = baseDrift * 3.0;   // max during boost
-
-// subtle horizontal drift for cinematic feel
-const horizontalDrift = (movingRight ? 1 : movingLeft ? -1 : 0) * (baseDrift * 0.4);
-
-// pass combined motion to starfield
-starFieldRef.current.update(true, starSpeed * 0.6, horizontalDrift);
-starFieldRef.current.draw(boostActive);
-
+        // Only draw stars if visible (above layer 1)
+        if (effectiveAlpha > 0.01) {
+          starFieldRef.current.update(true, starSpeed * 0.6, horizontalDrift);
+          starFieldRef.current.draw(boostActive, effectiveAlpha);
+        }
       }
 
       // 3) rocket (top)
       drawRocket();
+      // === Plasma Warp Lines Around Rocket ===
+      // === Plasma Warp Lines (Safe Version) ===
+      // === Cinematic Plasma Warp Field ===
+      // === Side Plasma Warp Lines (Sci-Fi Realistic) ===
+      // === Plasma Flow Around Rocket (Curved Sci-Fi Trails) ===
+      // === Rocket Rear Plasma Exhaust ===
+      {
+        try {
+          const movingUp =
+            keys.current["ArrowUp"] || keys.current["w"] || keys.current["W"];
+          const boostActive =
+            movingUp &&
+            (keys.current["Shift"] ||
+              keys.current["ShiftLeft"] ||
+              keys.current["ShiftRight"]);
+
+          // --- Color logic ---
+          const hue = boostActive ? 48 : movingUp ? 210 : 210; // warm gold for boost, blue-white otherwise
+          const saturation = boostActive ? 100 : movingUp ? 70 : 40;
+          const lightness = boostActive ? 70 : movingUp ? 85 : 90;
+          const alpha = boostActive ? 0.8 : movingUp ? 0.45 : 0.2;
+
+          // --- Shape/size control ---
+          const exhaustCount = boostActive ? 22 : movingUp ? 16 : 8;
+          const exhaustLength = boostActive ? 140 : movingUp ? 100 : 50;
+          const exhaustWidth = boostActive ? 1.8 : movingUp ? 1.3 : 0.8;
+
+          const rocketCenterX = rocket.x + rocket.w / 2;
+          const rocketBottomY = rocket.y + rocket.h - 2;
+
+          ctx.save();
+          ctx.globalAlpha = alpha;
+
+          for (let i = 0; i < exhaustCount; i++) {
+            // Gentle jitter for turbulence look
+            const jitterX = (Math.random() - 0.5) * rocket.w * 0.4;
+            const startX = rocketCenterX + jitterX;
+            const startY = rocketBottomY;
+
+            // More vertical exhaust — slightly flaring outward
+            const controlX = startX + jitterX * 0.4;
+            const controlY = startY + exhaustLength * 0.35;
+            const endX = startX + jitterX * 0.7;
+            const endY = startY + exhaustLength;
+
+            const gradient = ctx.createLinearGradient(
+              startX,
+              startY,
+              endX,
+              endY
+            );
+            gradient.addColorStop(
+              0,
+              `hsla(${hue}, ${saturation}%, ${lightness}%, 0)`
+            );
+            gradient.addColorStop(
+              0.3,
+              `hsla(${hue}, ${saturation}%, ${lightness}%, ${
+                0.85 - Math.random() * 0.2
+              })`
+            );
+            gradient.addColorStop(
+              1,
+              `hsla(${hue}, ${saturation}%, ${lightness}%, 0)`
+            );
+
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            ctx.quadraticCurveTo(controlX, controlY, endX, endY);
+            ctx.strokeStyle = gradient;
+            ctx.lineWidth = exhaustWidth;
+            ctx.stroke();
+          }
+
+          // --- Core glow near rocket ---
+          const coreGradient = ctx.createRadialGradient(
+            rocketCenterX,
+            rocketBottomY,
+            0,
+            rocketCenterX,
+            rocketBottomY,
+            18
+          );
+          coreGradient.addColorStop(
+            0,
+            `hsla(${hue}, ${saturation}%, ${lightness}%, 0.4)`
+          );
+          coreGradient.addColorStop(1, `transparent`);
+
+          ctx.fillStyle = coreGradient;
+          ctx.fillRect(rocketCenterX - 20, rocketBottomY - 4, 40, 30);
+
+          ctx.restore();
+        } catch (err) {
+          console.warn("Plasma exhaust draw skipped:", err);
+        }
+      }
+
+      // === High-Speed Plasma Lines Around Rocket ===
+      // === High-Speed Plasma Lines Around Rocket ===
+      if (!gameOver) {
+        const speed = visualSpeedRef.current * 100; // convert your speedRef into visible intensity
+
+        if (speed > 15) {
+          const streakCount = Math.min(20, Math.floor(speed / 8));
+          const streakLength = Math.min(80, speed * 1.4);
+          const streakAlpha = Math.min(0.85, speed / 150);
+          const hue = 190 + Math.min(100, speed / 2);
+
+          for (let i = 0; i < streakCount; i++) {
+            const offsetX = (Math.random() - 0.5) * 40;
+            const tilt = (Math.random() - 0.5) * 0.3; // small angle tilt per line
+            const x = rocket.x + rocket.w / 2 + offsetX;
+            const y1 = rocket.y - streakLength / 2;
+            const y2 = rocket.y + streakLength / 2;
+
+            ctx.save();
+            ctx.translate(x, rocket.y);
+            ctx.rotate(tilt);
+            ctx.translate(-x, -rocket.y);
+
+            const gradient = ctx.createLinearGradient(x, y1, x, y2);
+            gradient.addColorStop(0, `hsla(${hue}, 100%, 75%, 0)`);
+            gradient.addColorStop(
+              0.5,
+              `hsla(${hue}, 100%, 70%, ${streakAlpha})`
+            );
+            gradient.addColorStop(1, `hsla(${hue}, 100%, 75%, 0)`);
+
+            ctx.beginPath();
+            ctx.strokeStyle = gradient;
+            ctx.lineWidth = 2;
+            ctx.moveTo(x, y1);
+            ctx.lineTo(x, y2);
+            ctx.stroke();
+            ctx.restore();
+          }
+        }
+      }
 
       // 4) particles (if explosion active)
       updateParticles(deltaMs);
