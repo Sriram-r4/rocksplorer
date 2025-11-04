@@ -2,7 +2,8 @@
 import { useRef, useEffect, useState } from "react";
 import { layersData } from "../data/layersData";
 import { StarField } from "../utils/StarField";
-
+import { ObstacleDrawer } from "../components/game/ObstacleDrawer";
+import drawRocketObject from "./game/rocket";
 /**
  * GameCanvas
  * - Visuals driven by visualScrollRef (pixels-like accumulator) so star/obstacle motion remains perceptible
@@ -290,31 +291,14 @@ export default function GameCanvas({ onUpdate }) {
         (obs) => obs.y < gameCanvas.height + obs.size * 3
       );
     }
-
     function drawObstacles() {
-      ctx.save();
+      // NOTE: If you are using canvas scaling (ctx.scale) for responsiveness,
+      // apply the scale/translate *before* this loop, as demonstrated in my previous answer.
+
       obstaclesRef.current.forEach((obs) => {
-        if (obs.type === "satellite") {
-          ctx.fillStyle = "rgba(200,220,255,0.95)";
-          ctx.fillRect(obs.x, obs.y, obs.size * 1.1, obs.size * 0.6);
-          ctx.fillStyle = "rgba(150,170,200,0.95)";
-          ctx.fillRect(
-            obs.x + obs.size * 0.72,
-            obs.y + obs.size * 0.15,
-            obs.size * 0.1,
-            obs.size * 0.32
-          );
-        } else if (obs.type === "debris") {
-          ctx.fillStyle = "rgba(255,180,100,0.95)";
-          ctx.fillRect(obs.x, obs.y, obs.size, obs.size * 0.6);
-        } else {
-          ctx.fillStyle = "rgba(255,100,100,0.95)";
-          ctx.beginPath();
-          ctx.rect(obs.x, obs.y, obs.size, obs.size);
-          ctx.fill();
-        }
+        // This single line replaces the entire switch/if-else block from before
+        ObstacleDrawer.draw(ctx, obs);
       });
-      ctx.restore();
     }
 
     function checkCollision() {
@@ -524,43 +508,7 @@ export default function GameCanvas({ onUpdate }) {
 
     // ----- Draw rocket -----
     function drawRocket() {
-      ctx.save();
-      const tilt = Math.max(-0.28, Math.min(0.28, rocket.vx * 0.022));
-      ctx.translate(rocket.x + rocket.w / 2, rocket.y + rocket.h / 2);
-      ctx.rotate(tilt);
-      ctx.fillStyle = "white";
-      ctx.beginPath();
-      ctx.moveTo(0, -rocket.h / 2);
-      ctx.lineTo(-rocket.w / 2, rocket.h / 2);
-      ctx.lineTo(rocket.w / 2, rocket.h / 2);
-      ctx.closePath();
-      ctx.fill();
-
-      const thrustPower = Math.min(
-        1,
-        Math.abs(rocket.vy) / Math.abs(rocket.boostSpeed)
-      );
-      const flameHeight = 18 + Math.random() * 6 + 42 * thrustPower;
-      const flameWidth = 10 + Math.random() * 3 + 8 * thrustPower;
-      const grad = ctx.createLinearGradient(
-        0,
-        rocket.h / 2,
-        0,
-        rocket.h / 2 + flameHeight
-      );
-      grad.addColorStop(
-        0,
-        `rgba(255,230,140,${0.9 * (0.6 + thrustPower * 0.4)})`
-      );
-      grad.addColorStop(1, "rgba(255,120,40,0)");
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.moveTo(0, rocket.h / 2);
-      ctx.lineTo(-flameWidth / 2, rocket.h / 2 + flameHeight);
-      ctx.lineTo(flameWidth / 2, rocket.h / 2 + flameHeight);
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
+      drawRocketObject(ctx, rocket);
     }
 
     // ----- Main loop -----
@@ -793,7 +741,7 @@ export default function GameCanvas({ onUpdate }) {
         const cx = rocket.x + rocket.w / 2;
         const cy = rocket.y + rocket.h / 2;
         createPlasmaBurst(cx, cy);
-        setGameOver(true);
+        //setGameOver(true);
       }
 
       // report HUD/parent
