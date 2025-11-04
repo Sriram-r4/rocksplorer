@@ -6,7 +6,7 @@ export default function App() {
   const [hudData, setHudData] = useState(null);
 
   return (
-    <div className="relative w-screen h-screen overflow-hidden bg-black">
+    <div className="relative w-screen min-h-dvh overflow-hidden bg-black touch-none select-none">
       <GameCanvas onUpdate={setHudData} />
       <HUD data={hudData} />
     </div>

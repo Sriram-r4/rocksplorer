@@ -16,26 +16,19 @@ export default function GameCanvas({ onUpdate }) {
   const starCanvasRef = useRef(null);
 
   const keys = useRef({});
-  const distanceRef = useRef(0); // true distance in km (for HUD)
-  const visualScrollRef = useRef(0); // visual scroll accumulator (px-like)
-  const visualSpeedRef = useRef(0); // current visual speed in px/ms
+  const distanceRef = useRef(0);
+  const visualScrollRef = useRef(0);
+  const visualSpeedRef = useRef(0);
   const animationRef = useRef(null);
   const starFieldRef = useRef(null);
   const obstaclesRef = useRef([]);
   const spawnTimerRef = useRef(0);
-  const particlesRef = useRef([]); // for explosion effect
-  const [gameOver, setGameOver] = useState(false);
+  const particlesRef = useRef([]);
   const explosionRef = useRef({ active: false, t: 0 });
+  const [gameOver, setGameOver] = useState(false);
+  const [gameMode, setGameMode] = useState("hard");
 
   useEffect(() => {
-    // Defensive check
-    if (!Array.isArray(layersData) || layersData.length === 0) {
-      console.warn(
-        "layersData missing — GameCanvas will not start until layersData is provided."
-      );
-      return;
-    }
-
     const gameCanvas = gameCanvasRef.current;
     const starCanvas = starCanvasRef.current;
     if (!gameCanvas || !starCanvas) return;
@@ -43,19 +36,36 @@ export default function GameCanvas({ onUpdate }) {
     const ctx = gameCanvas.getContext("2d");
     const starCtx = starCanvas.getContext("2d");
 
-    // ----- Resize -----
-    const resize = () => {
-      gameCanvas.width = window.innerWidth;
-      gameCanvas.height = window.innerHeight;
-      starCanvas.width = window.innerWidth;
-      starCanvas.height = window.innerHeight;
-      if (starFieldRef.current)
-        starFieldRef.current.resize(starCanvas.width, starCanvas.height);
+    // ✅ Helper to get full visible viewport height
+    const getViewportHeight = () => {
+      // visualViewport gives the exact area visible (ignores URL bar)
+      return window.visualViewport
+        ? window.visualViewport.height
+        : window.innerHeight;
     };
-    resize();
-    window.addEventListener("resize", resize);
 
-    // ----- Rocket -----
+    // ✅ Resize both canvases dynamically
+    const resize = () => {
+      const width = window.innerWidth;
+      const height = getViewportHeight();
+
+      gameCanvas.width = width;
+      gameCanvas.height = height;
+      starCanvas.width = width;
+      starCanvas.height = height;
+
+      if (starFieldRef.current) starFieldRef.current.resize(width, height);
+    };
+
+    // Call immediately
+    resize();
+
+    // Listen for resizes and visualViewport changes (for mobile browser chrome)
+    window.addEventListener("resize", resize);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", resize);
+    }
+
     const rocket = {
       x: gameCanvas.width / 2 - 20,
       y: gameCanvas.height * 0.7,
@@ -69,17 +79,13 @@ export default function GameCanvas({ onUpdate }) {
       boostSpeed: -0.26,
     };
 
-    // ----- Input -----
-    const handleKeyDown = (e) => {
-      keys.current[e.key] = true;
-    };
-    const handleKeyUp = (e) => {
-      keys.current[e.key] = false;
-    };
+    // 🎮 Keyboard Controls
+    const handleKeyDown = (e) => (keys.current[e.key] = true);
+    const handleKeyUp = (e) => (keys.current[e.key] = false);
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
 
-    // ----- Restart handlers -----
+    // 🔁 Restart Handlers
     const restartGame = () => {
       setGameOver(false);
       obstaclesRef.current = [];
@@ -96,6 +102,52 @@ export default function GameCanvas({ onUpdate }) {
       if (!animationRef.current)
         animationRef.current = requestAnimationFrame(loop);
     };
+    window.addEventListener("keydown", (e) => {
+      if (gameOver && (e.key === "r" || e.key === "R")) restartGame();
+    });
+    window.addEventListener("click", () => {
+      if (gameOver) restartGame();
+    });
+
+    // 📱 Touch + Swipe Controls
+    let touchStartX = 0,
+      touchStartY = 0;
+    let touchActive = false;
+
+    function handleTouchStart(e) {
+      const t = e.touches[0];
+      touchStartX = t.clientX;
+      touchStartY = t.clientY;
+      touchActive = true;
+      keys.current["ArrowUp"] = true; // Thrust when touching screen
+    }
+
+    function handleTouchMove(e) {
+      if (!touchActive) return;
+      const t = e.touches[0];
+      const dx = t.clientX - touchStartX;
+      const dy = t.clientY - touchStartY;
+
+      // Reset all
+      keys.current["ArrowLeft"] = false;
+      keys.current["ArrowRight"] = false;
+      keys.current["Shift"] = false;
+
+      // Horizontal movement
+      if (dx > 30) keys.current["ArrowRight"] = true;
+      else if (dx < -30) keys.current["ArrowLeft"] = true;
+
+      // Vertical up swipe = boost
+      if (dy < -50) keys.current["Shift"] = true;
+    }
+
+    function handleTouchEnd() {
+      touchActive = false;
+      keys.current["ArrowUp"] = false;
+      keys.current["ArrowLeft"] = false;
+      keys.current["ArrowRight"] = false;
+      keys.current["Shift"] = false;
+    }
 
     const handleRestartKey = (e) => {
       if (gameOver && (e.key === "r" || e.key === "R")) restartGame();
@@ -103,8 +155,11 @@ export default function GameCanvas({ onUpdate }) {
     const handleRestartClick = () => {
       if (gameOver) restartGame();
     };
-    window.addEventListener("keydown", handleRestartKey);
-    window.addEventListener("click", handleRestartClick);
+
+    gameCanvas.addEventListener("touchstart", handleTouchStart);
+    gameCanvas.addEventListener("touchmove", handleTouchMove);
+    gameCanvas.addEventListener("touchend", handleTouchEnd);
+    gameCanvas.addEventListener("touchcancel", handleTouchEnd);
 
     // ----- Helpers -----
     function interpolateColor(color1, color2, factor) {
@@ -221,8 +276,6 @@ export default function GameCanvas({ onUpdate }) {
       }
       return macroRegions.length - 1;
     }
-
-    // === FIXED OBSTACLE SYSTEM ===
     function getScaleFactor() {
       const w = window.innerWidth;
       if (w <= 400) return 0.5;
@@ -232,56 +285,54 @@ export default function GameCanvas({ onUpdate }) {
       return 1;
     }
 
+    function getDifficultySettings() {
+      return gameMode === "hard"
+        ? {
+            spawnMultiplier: 0.75, // faster spawns (more obstacles)
+            speedMultiplier: 1.5, // faster movement
+            hitboxMargin: 3.5, // tighter collision (harder)
+          }
+        : {
+            spawnMultiplier: 1.3, // slower spawns (fewer obstacles)
+            speedMultiplier: 0.85, // slower movement
+            hitboxMargin: 7, // forgiving collision
+          };
+    }
+
     function spawnObstacle(regionIndex) {
       const scaleFactor = getScaleFactor();
+      const { speedMultiplier } = getDifficultySettings();
+
       const { width: cw, height: ch } = gameCanvas;
 
-      let possibleTypes;
-      switch (regionIndex) {
-        case 0:
-          possibleTypes = ["debris", "junk", "satellite"];
-          break;
-        case 1:
-          possibleTypes = ["satellite", "asteroid", "comet", "moon"];
-          break;
-        case 2:
-          possibleTypes = ["asteroid", "comet", "nebula"];
-          break;
-        default:
-          possibleTypes = ["nebula", "blackhole", "asteroid"];
-      }
-
+      const typeSets = [
+        ["debris", "junk", "satellite"],
+        ["satellite", "asteroid", "comet", "moon"],
+        ["asteroid", "comet", "nebula"],
+        ["nebula", "blackhole", "asteroid"],
+      ];
+      const possibleTypes = typeSets[Math.min(regionIndex, 3)];
       const type =
         possibleTypes[Math.floor(Math.random() * possibleTypes.length)];
 
-      // Size per type (scaled once)
-      let baseSize;
-      switch (type) {
-        case "satellite":
-          baseSize = 40;
-          break;
-        case "asteroid":
-          baseSize = 50;
-          break;
-        case "comet":
-          baseSize = 45;
-          break;
-        case "moon":
-          baseSize = 70;
-          break;
-        case "nebula":
-          baseSize = 90;
-          break;
-        case "blackhole":
-          baseSize = 80;
-          break;
-        default:
-          baseSize = 35;
-      }
+      const sizeBase =
+        {
+          satellite: 40,
+          asteroid: 50,
+          comet: 45,
+          moon: 70,
+          nebula: 90,
+          blackhole: 80,
+          debris: 35,
+          junk: 30,
+        }[type] || 40;
 
-      const size = baseSize * scaleFactor * (1 + Math.random() * 0.3);
+      const size = sizeBase * scaleFactor * (1 + Math.random() * 0.3);
       const speed =
-        (1.2 + regionIndex * 0.8) * scaleFactor * (0.8 + Math.random() * 0.4);
+        (1.2 + regionIndex * 0.8) *
+        scaleFactor *
+        (0.8 + Math.random() * 0.4) *
+        speedMultiplier;
 
       const x = Math.random() * (cw - size);
       const y = -size - Math.random() * (ch * 0.3);
@@ -300,9 +351,29 @@ export default function GameCanvas({ onUpdate }) {
     function updateObstacles(deltaMs, visualSpeed, regionIndex) {
       spawnTimerRef.current += deltaMs;
 
-      const spawnRate = [1500, 1200, 900, 700][Math.min(regionIndex, 3)];
-      if (spawnTimerRef.current > spawnRate) {
-        spawnObstacle(regionIndex);
+      const { spawnMultiplier } = getDifficultySettings();
+      const scaleFactor = getScaleFactor();
+
+      const baseIntervals = [1600, 1300, 1000, 800];
+      const difficultyBoost =
+        1 + regionIndex * 0.25 + Math.abs(visualSpeed) * 0.003;
+      const screenAdjustment = scaleFactor < 0.8 ? 1.3 : 1.0;
+
+      const interval =
+        (baseIntervals[Math.min(regionIndex, baseIntervals.length - 1)] *
+          screenAdjustment *
+          spawnMultiplier) /
+        difficultyBoost;
+
+      if (spawnTimerRef.current > interval) {
+        const burstChance = 0.18 + regionIndex * 0.05;
+        const burstCount =
+          Math.random() < burstChance ? 1 + Math.floor(Math.random() * 2) : 1;
+
+        for (let i = 0; i < burstCount; i++) {
+          spawnObstacle(regionIndex);
+        }
+
         spawnTimerRef.current = 0;
       }
 
@@ -317,6 +388,7 @@ export default function GameCanvas({ onUpdate }) {
     }
 
     function drawObstacles() {
+      if (!ctx) return;
       ctx.save();
       obstaclesRef.current.forEach((obs) => {
         ObstacleDrawer.draw(ctx, obs);
@@ -325,13 +397,14 @@ export default function GameCanvas({ onUpdate }) {
     }
 
     function checkCollision() {
+      const { hitboxMargin } = getDifficultySettings();
       return obstaclesRef.current.some((obs) => {
-        const margin = 6; // gives the player a small grace buffer
+        const m = hitboxMargin;
         return (
-          rocket.x + margin < obs.x + obs.size - margin &&
-          rocket.x + rocket.w - margin > obs.x + margin &&
-          rocket.y + margin < obs.y + obs.size - margin &&
-          rocket.y + rocket.h - margin > obs.y + margin
+          rocket.x + m < obs.x + obs.size - m &&
+          rocket.x + rocket.w - m > obs.x + m &&
+          rocket.y + m < obs.y + obs.size - m &&
+          rocket.y + rocket.h - m > obs.y + m
         );
       });
     }
@@ -779,10 +852,18 @@ export default function GameCanvas({ onUpdate }) {
       cancelAnimationFrame(animationRef.current);
       animationRef.current = null;
       window.removeEventListener("resize", resize);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener("resize", resize);
+      }
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("keydown", handleRestartKey);
       window.removeEventListener("click", handleRestartClick);
+
+      gameCanvas.removeEventListener("touchstart", handleTouchStart);
+      gameCanvas.removeEventListener("touchmove", handleTouchMove);
+      gameCanvas.removeEventListener("touchend", handleTouchEnd);
+      gameCanvas.removeEventListener("touchcancel", handleTouchEnd);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onUpdate, gameOver]);
