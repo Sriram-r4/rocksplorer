@@ -4,11 +4,12 @@ import { layersData } from "../data/layersData";
 import { StarField } from "../utils/StarField";
 import { ObstacleDrawer } from "../components/game/ObstacleDrawer";
 import drawRocketObject from "./game/rocket";
+
 /**
  * GameCanvas
- * - Visuals driven by visualScrollRef (pixels-like accumulator) so star/obstacle motion remains perceptible
- * - distanceRef keeps the "true" astronomical distance for HUD only
- * - Sci-fi plasma burst on collision (blue/purple particles)
+ * - Enhanced with realistic space obstacles that adapt to screen size
+ * - Region-appropriate obstacles (satellites near Earth, nebulae in interstellar space, etc.)
+ * - Fair gameplay across all screen sizes with responsive hitboxes
  */
 export default function GameCanvas({ onUpdate }) {
   const gameCanvasRef = useRef(null);
@@ -65,7 +66,7 @@ export default function GameCanvas({ onUpdate }) {
       targetVy: -0.02,
       baseClimb: -0.02,
       thrustSpeed: -0.1,
-      boostSpeed: -0.26, // slightly stronger boost for thrill
+      boostSpeed: -0.26,
     };
 
     // ----- Input -----
@@ -92,7 +93,6 @@ export default function GameCanvas({ onUpdate }) {
       rocket.vy = 0;
       rocket.targetVy = rocket.baseClimb;
       spawnTimerRef.current = 0;
-      // resume loop if it was stopped
       if (!animationRef.current)
         animationRef.current = requestAnimationFrame(loop);
     };
@@ -123,7 +123,7 @@ export default function GameCanvas({ onUpdate }) {
       )}, ${Math.round(b1 + (b2 - b1) * factor)})`;
     }
 
-    // ----- Layer helpers (defensive) -----
+    // ----- Layer helpers -----
     function getLayer(distance) {
       if (!Array.isArray(layersData) || layersData.length === 0) return 0;
       for (let i = 0; i < layersData.length - 1; i++) {
@@ -173,7 +173,7 @@ export default function GameCanvas({ onUpdate }) {
         160
       );
 
-    // ----- Macro regions (tuned for smoother distance scaling) -----
+    // ----- Macro regions -----
     const macroRegions = [
       {
         name: "EARTH & ATMOSPHERE",
@@ -222,94 +222,116 @@ export default function GameCanvas({ onUpdate }) {
       return macroRegions.length - 1;
     }
 
-    // ----- Obstacles -----
+    // === FIXED OBSTACLE SYSTEM ===
+    function getScaleFactor() {
+      const w = window.innerWidth;
+      if (w <= 400) return 0.5;
+      if (w <= 600) return 0.65;
+      if (w <= 900) return 0.8;
+      if (w <= 1200) return 0.9;
+      return 1;
+    }
+
     function spawnObstacle(regionIndex) {
-      const baseSize = Math.random() * 28 + 20;
-      const sizeScale = 1 + regionIndex * 0.5;
-      const size = Math.round(baseSize * sizeScale);
+      const scaleFactor = getScaleFactor();
+      const { width: cw, height: ch } = gameCanvas;
 
-      const x = Math.max(
-        0,
-        Math.min(
-          gameCanvas.width - size,
-          Math.random() * (gameCanvas.width - size)
-        )
-      );
-      const baseSpeed = 1.8 + regionIndex * 1.8;
-      const speed = baseSpeed + Math.random() * (0.9 + regionIndex * 0.7);
+      let possibleTypes;
+      switch (regionIndex) {
+        case 0:
+          possibleTypes = ["debris", "junk", "satellite"];
+          break;
+        case 1:
+          possibleTypes = ["satellite", "asteroid", "comet", "moon"];
+          break;
+        case 2:
+          possibleTypes = ["asteroid", "comet", "nebula"];
+          break;
+        default:
+          possibleTypes = ["nebula", "blackhole", "asteroid"];
+      }
 
-      const typeRoll = Math.random();
       const type =
-        typeRoll < 0.12 ? "satellite" : typeRoll < 0.62 ? "rock" : "debris";
+        possibleTypes[Math.floor(Math.random() * possibleTypes.length)];
+
+      // Size per type (scaled once)
+      let baseSize;
+      switch (type) {
+        case "satellite":
+          baseSize = 40;
+          break;
+        case "asteroid":
+          baseSize = 50;
+          break;
+        case "comet":
+          baseSize = 45;
+          break;
+        case "moon":
+          baseSize = 70;
+          break;
+        case "nebula":
+          baseSize = 90;
+          break;
+        case "blackhole":
+          baseSize = 80;
+          break;
+        default:
+          baseSize = 35;
+      }
+
+      const size = baseSize * scaleFactor * (1 + Math.random() * 0.3);
+      const speed =
+        (1.2 + regionIndex * 0.8) * scaleFactor * (0.8 + Math.random() * 0.4);
+
+      const x = Math.random() * (cw - size);
+      const y = -size - Math.random() * (ch * 0.3);
 
       obstaclesRef.current.push({
         x,
-        y: -size - Math.random() * 120, // spawn slightly off-screen for stagger
+        y,
         size,
         speed,
         type,
+        rotation: Math.random() * Math.PI * 2,
+        rotSpeed: (Math.random() - 0.5) * 0.03,
       });
     }
 
     function updateObstacles(deltaMs, visualSpeed, regionIndex) {
       spawnTimerRef.current += deltaMs;
 
-      const baseIntervals = [1500, 1200, 900, 700];
-      const safeIndex = Math.max(
-        0,
-        Math.min(baseIntervals.length - 1, regionIndex)
-      );
-      const base = baseIntervals[safeIndex];
-
-      // interval reduces with region index and visual speed, but clamped
-      const interval = Math.max(
-        300,
-        base / (1 + regionIndex * 0.7 + Math.abs(visualSpeed) * 0.01)
-      );
-
-      if (spawnTimerRef.current > interval) {
-        if (regionIndex >= 2 && Math.random() < 0.22) {
-          const burst = 1 + Math.floor(Math.random() * (2 + regionIndex));
-          for (let i = 0; i < burst; i++) spawnObstacle(regionIndex);
-        } else {
-          spawnObstacle(regionIndex);
-        }
+      const spawnRate = [1500, 1200, 900, 700][Math.min(regionIndex, 3)];
+      if (spawnTimerRef.current > spawnRate) {
+        spawnObstacle(regionIndex);
         spawnTimerRef.current = 0;
       }
 
-      // move obstacles downward using visualSpeed (not astronomical distance)
       obstaclesRef.current.forEach((obs) => {
-        // motion = obstacle own speed + small fraction of visual scroll, clamped
-        const down =
-          obs.speed * (0.6 + regionIndex * 0.18) +
-          Math.min(visualSpeed * 0.018, 45);
-        obs.y += down;
+        obs.y += obs.speed;
+        obs.rotation += obs.rotSpeed;
       });
 
-      // cull offscreen with buffer
       obstaclesRef.current = obstaclesRef.current.filter(
-        (obs) => obs.y < gameCanvas.height + obs.size * 3
+        (obs) => obs.y < gameCanvas.height + obs.size * 1.5
       );
     }
-    function drawObstacles() {
-      // NOTE: If you are using canvas scaling (ctx.scale) for responsiveness,
-      // apply the scale/translate *before* this loop, as demonstrated in my previous answer.
 
+    function drawObstacles() {
+      ctx.save();
       obstaclesRef.current.forEach((obs) => {
-        // This single line replaces the entire switch/if-else block from before
         ObstacleDrawer.draw(ctx, obs);
       });
+      ctx.restore();
     }
 
     function checkCollision() {
       return obstaclesRef.current.some((obs) => {
-        const w = obs.size * (obs.type === "satellite" ? 1.06 : 1);
-        const h = obs.size * (obs.type === "satellite" ? 0.6 : 1);
+        const margin = 6; // gives the player a small grace buffer
         return (
-          rocket.x < obs.x + w &&
-          rocket.x + rocket.w > obs.x &&
-          rocket.y < obs.y + h &&
-          rocket.y + rocket.h > obs.y
+          rocket.x + margin < obs.x + obs.size - margin &&
+          rocket.x + rocket.w - margin > obs.x + margin &&
+          rocket.y + margin < obs.y + obs.size - margin &&
+          rocket.y + rocket.h - margin > obs.y + margin
         );
       });
     }
@@ -321,9 +343,8 @@ export default function GameCanvas({ onUpdate }) {
       for (let i = 0; i < count; i++) {
         const angle = Math.random() * Math.PI * 2;
         const speed = 1 + Math.random() * 8;
-        const life = 700 + Math.random() * 600; // ms
+        const life = 700 + Math.random() * 600;
         const size = 1 + Math.random() * 3;
-        // color palette: electric cyan -> deep purple
         const mix = Math.random();
         const r = Math.round(20 + 120 * mix);
         const g = Math.round(180 + 40 * (1 - mix));
@@ -347,15 +368,13 @@ export default function GameCanvas({ onUpdate }) {
       if (!explosionRef.current.active) return;
       explosionRef.current.t += deltaMs;
       particlesRef.current.forEach((p) => {
-        // magnetic pull center effect for plasma swirl
         p.vx *= 0.98;
         p.vy *= 0.98;
-        p.vy += 0.02; // slight downward drift
+        p.vy += 0.02;
         p.x += p.vx + (Math.random() - 0.5) * 0.3;
         p.y += p.vy + (Math.random() - 0.5) * 0.3;
         p.age += deltaMs;
       });
-      // remove dead
       particlesRef.current = particlesRef.current.filter((p) => p.age < p.life);
       if (particlesRef.current.length === 0)
         explosionRef.current.active = false;
@@ -373,7 +392,6 @@ export default function GameCanvas({ onUpdate }) {
         ctx.arc(p.x, p.y, p.size * 1.5, 0, Math.PI * 2);
         ctx.fill();
 
-        // inner bright dot
         ctx.beginPath();
         ctx.fillStyle = `${p.color}${(0.9 * glow).toFixed(3)})`;
         ctx.arc(p.x, p.y, p.size * 0.75, 0, Math.PI * 2);
@@ -382,7 +400,7 @@ export default function GameCanvas({ onUpdate }) {
       ctx.restore();
     }
 
-    // ----- Distance advancement (keeps core behavior but uses balanced region timings) -----
+    // ----- Distance advancement -----
     const PLAYER_MULT_NONE = 1;
     const PLAYER_MULT_UP = 2;
     const PLAYER_MULT_BOOST = 5;
@@ -446,7 +464,7 @@ export default function GameCanvas({ onUpdate }) {
       }
     }
 
-    // ----- Physics update (unchanged controls, but updates visual speed) -----
+    // ----- Physics update -----
     function updatePhysics(deltaMs) {
       const upPressed = keys.current["ArrowUp"] || keys.current["w"];
       const boostPressed =
@@ -458,51 +476,42 @@ export default function GameCanvas({ onUpdate }) {
       else if (upPressed) rocket.targetVy = rocket.thrustSpeed;
       else rocket.targetVy = rocket.baseClimb;
 
-      // smooth vertical interpolation
       const smooth = 0.08;
       rocket.vy += (rocket.targetVy - rocket.vy) * smooth;
 
-      // horizontal movement
       if (keys.current["ArrowLeft"] || keys.current["a"]) rocket.vx -= 0.22;
       if (keys.current["ArrowRight"] || keys.current["d"]) rocket.vx += 0.22;
       rocket.vx *= 0.96;
       rocket.x += rocket.vx;
       rocket.x = Math.max(0, Math.min(gameCanvas.width - rocket.w, rocket.x));
 
-      // advance "real" distance
       advanceDistance(deltaMs);
 
-      // compute visual speed (normalized) from region factors and player action
       const regionIdx = getMacroRegionIndex(distanceRef.current);
       const region = macroRegions[regionIdx];
       const regionMs = Math.max(1000, region.durationSec * 1000);
       const baseFractionPerMs = 1 / regionMs;
       const fracPerMs = baseFractionPerMs * (region.baseSpeedFactor || 1);
 
-      // visualAcceleration is a small number that maps to pixels/ms feel
-      const baseVisual = 0.02 + regionIdx * 0.006; // base visual per ms increases with region
-      const thrustFactor = Math.max(0, -rocket.vy) * 0.85; // vertical input contributes
+      const baseVisual = 0.02 + regionIdx * 0.006;
+      const thrustFactor = Math.max(0, -rocket.vy) * 0.85;
       const boostFactor = keys.current["Shift"] ? 1.2 : 1;
 
-      // combine to get a smooth visual speed (pixels per ms)
       const targetVisualSpeed =
         (baseVisual + fracPerMs * 0.18) *
         (1 + thrustFactor) *
         boostFactor *
         1.0;
 
-      // smooth visual speed
       visualSpeedRef.current +=
         (targetVisualSpeed - visualSpeedRef.current) * 0.06;
 
-      // advance visual scroll by visualSpeed * deltaMs (clamped)
       const step = Math.max(
         0,
         Math.min(visualSpeedRef.current * deltaMs * 1.0, 200)
-      ); // clamp per-frame step
+      );
       visualScrollRef.current += step;
 
-      // limit visualScrollRef to prevent float runaway (wrap)
       if (visualScrollRef.current > 1e7) visualScrollRef.current %= 1e7;
     }
 
@@ -515,21 +524,17 @@ export default function GameCanvas({ onUpdate }) {
     let lastTime = 0;
     function loop(timestamp) {
       if (!lastTime) lastTime = timestamp;
-      const deltaMs = Math.min(60, timestamp - lastTime); // ms clamp
+      const deltaMs = Math.min(60, timestamp - lastTime);
       lastTime = timestamp;
 
-      // if not game over, update mechanics
       if (!gameOver) {
         updatePhysics(deltaMs);
       }
 
-      // draw gradient for layer once (star canvas)
       const { idx: layerIdx } = drawGradientForLayer(distanceRef.current);
 
-      // clear game canvas only
       ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
 
-      // 1) obstacles (game canvas)
       updateObstacles(
         deltaMs,
         visualSpeedRef.current,
@@ -537,31 +542,16 @@ export default function GameCanvas({ onUpdate }) {
       );
       drawObstacles();
 
-      // const currentLayer =
-      //   layersData[layerIdx]?.name || `Unknown Layer (${layerIdx})`;
-
-      // if (
-      //   !window._lastLoggedLayer ||
-      //   window._lastLoggedLayer !== currentLayer
-      // ) {
-      //   console.log(`🛰️ Layer Changed → ${currentLayer} (Index: ${layerIdx})`);
-      //   window._lastLoggedLayer = currentLayer;
-      // }
-      // 2) starfield (draw on star canvas)
       if (starFieldRef.current) {
-        // --- STARFIELD VISIBILITY LOGIC --- //
         let starAlpha = 0;
-        if (layerIdx <= 1) starAlpha = 0; // No stars in ground/troposphere
-        else if (layerIdx === 5)
-          starAlpha = 0.4; // Subtle start in stratosphere
-        else if (layerIdx >= 6) starAlpha = 1; // Full stars beyond
+        if (layerIdx <= 1) starAlpha = 0;
+        else if (layerIdx === 5) starAlpha = 0.4;
+        else if (layerIdx >= 6) starAlpha = 1;
 
-        // Smooth fade transition
         starFieldRef.current.fadeProgress +=
           (starAlpha - starFieldRef.current.fadeProgress) * 0.05;
         const effectiveAlpha = starFieldRef.current.fadeProgress;
 
-        // --- STARFIELD MOTION LOGIC --- //
         const movingUp =
           keys.current["ArrowUp"] || keys.current["w"] || keys.current["W"];
         const movingLeft =
@@ -582,21 +572,15 @@ export default function GameCanvas({ onUpdate }) {
         const horizontalDrift =
           (movingRight ? 1 : movingLeft ? -1 : 0) * (baseDrift * 0.4);
 
-        // Only draw stars if visible (above layer 1)
         if (effectiveAlpha > 0.01) {
           starFieldRef.current.update(true, starSpeed * 0.6, horizontalDrift);
           starFieldRef.current.draw(boostActive, effectiveAlpha);
         }
       }
 
-      // 3) rocket (top)
       drawRocket();
-      // === Plasma Warp Lines Around Rocket ===
-      // === Plasma Warp Lines (Safe Version) ===
-      // === Cinematic Plasma Warp Field ===
-      // === Side Plasma Warp Lines (Sci-Fi Realistic) ===
-      // === Plasma Flow Around Rocket (Curved Sci-Fi Trails) ===
-      // === Rocket Rear Plasma Exhaust ===
+
+      //===============================================================================================
       {
         try {
           const movingUp =
