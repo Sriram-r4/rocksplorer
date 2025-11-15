@@ -4,6 +4,7 @@ import { layersData } from "../data/layersData";
 import { StarField } from "../utils/StarField";
 import { ObstacleDrawer } from "../components/game/ObstacleDrawer";
 import drawRocketObject from "./game/rocket";
+import { CloudField } from "../utils/CloudField";
 
 /**
  * GameCanvas
@@ -14,7 +15,7 @@ import drawRocketObject from "./game/rocket";
 export default function GameCanvas({ onUpdate }) {
   const gameCanvasRef = useRef(null);
   const starCanvasRef = useRef(null);
-
+  const cloudFieldRef = useRef(null);
   const keys = useRef({});
   const distanceRef = useRef(0);
   const visualScrollRef = useRef(0);
@@ -55,6 +56,7 @@ export default function GameCanvas({ onUpdate }) {
       starCanvas.height = height;
 
       if (starFieldRef.current) starFieldRef.current.resize(width, height);
+      if (cloudFieldRef.current) cloudFieldRef.current.resize(width, height);
     };
 
     // Call immediately
@@ -218,7 +220,6 @@ export default function GameCanvas({ onUpdate }) {
 
       return { current, next, factor, idx };
     }
-
     // ----- StarField -----
     if (!starFieldRef.current)
       starFieldRef.current = new StarField(
@@ -226,6 +227,15 @@ export default function GameCanvas({ onUpdate }) {
         starCanvas.width,
         starCanvas.height,
         160
+      );
+
+    // ----- CloudField -----
+    if (!cloudFieldRef.current)
+      cloudFieldRef.current = new CloudField(
+        starCtx,
+        starCanvas.width,
+        starCanvas.height,
+        25
       );
 
     // ----- Macro regions -----
@@ -614,6 +624,29 @@ export default function GameCanvas({ onUpdate }) {
         getMacroRegionIndex(distanceRef.current)
       );
       drawObstacles();
+      // Draw clouds (visible at low altitudes only)
+      if (cloudFieldRef.current) {
+        // Clouds fade out as you climb
+        cloudFieldRef.current.setFade(distanceRef.current);
+        const effectiveCloudAlpha = cloudFieldRef.current.fadeProgress;
+
+        const movingUp =
+          keys.current["ArrowUp"] || keys.current["w"] || keys.current["W"];
+        const movingLeft =
+          keys.current["ArrowLeft"] || keys.current["a"] || keys.current["A"];
+        const movingRight =
+          keys.current["ArrowRight"] || keys.current["d"] || keys.current["D"];
+
+        const baseDrift = visualSpeedRef.current * 25;
+        const cloudSpeed = movingUp ? baseDrift * 1.2 : baseDrift * 0.5;
+        const horizontalDrift =
+          (movingRight ? 1 : movingLeft ? -1 : 0) * (baseDrift * 0.4);
+
+        if (effectiveCloudAlpha > 0.01) {
+          cloudFieldRef.current.update(true, cloudSpeed * 0.4, horizontalDrift);
+          cloudFieldRef.current.draw(movingUp);
+        }
+      }
 
       if (starFieldRef.current) {
         let starAlpha = 0;
