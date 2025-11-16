@@ -1,4 +1,3 @@
-// src/components/GameCanvas.jsx
 import { useRef, useEffect, useState } from "react";
 import { layersData } from "../data/layersData";
 import { StarField } from "../utils/StarField";
@@ -6,12 +5,6 @@ import { ObstacleDrawer } from "../components/game/ObstacleDrawer";
 import drawRocketObject from "./game/rocket";
 import { CloudField } from "../utils/CloudField";
 
-/**
- * GameCanvas
- * - Enhanced with realistic space obstacles that adapt to screen size
- * - Region-appropriate obstacles (satellites near Earth, nebulae in interstellar space, etc.)
- * - Fair gameplay across all screen sizes with responsive hitboxes
- */
 export default function GameCanvas({ onUpdate }) {
   const gameCanvasRef = useRef(null);
   const starCanvasRef = useRef(null);
@@ -26,8 +19,25 @@ export default function GameCanvas({ onUpdate }) {
   const spawnTimerRef = useRef(0);
   const particlesRef = useRef([]);
   const explosionRef = useRef({ active: false, t: 0 });
+  const lastDistanceUpdateRef = useRef(0);
+  const lastDistanceValueRef = useRef(0);
   const [gameOver, setGameOver] = useState(false);
   const [gameMode, setGameMode] = useState("hard");
+
+  useEffect(() => {
+    function updateGameMode() {
+      if (window.innerWidth < 900) {
+        setGameMode("easy");
+      } else {
+        setGameMode("hard");
+      }
+    }
+
+    updateGameMode(); 
+    window.addEventListener("resize", updateGameMode);
+
+    return () => window.removeEventListener("resize", updateGameMode);
+  }, []);
 
   useEffect(() => {
     const gameCanvas = gameCanvasRef.current;
@@ -37,15 +47,12 @@ export default function GameCanvas({ onUpdate }) {
     const ctx = gameCanvas.getContext("2d");
     const starCtx = starCanvas.getContext("2d");
 
-    // ✅ Helper to get full visible viewport height
     const getViewportHeight = () => {
-      // visualViewport gives the exact area visible (ignores URL bar)
       return window.visualViewport
         ? window.visualViewport.height
         : window.innerHeight;
     };
 
-    // ✅ Resize both canvases dynamically
     const resize = () => {
       const width = window.innerWidth;
       const height = getViewportHeight();
@@ -59,10 +66,8 @@ export default function GameCanvas({ onUpdate }) {
       if (cloudFieldRef.current) cloudFieldRef.current.resize(width, height);
     };
 
-    // Call immediately
     resize();
 
-    // Listen for resizes and visualViewport changes (for mobile browser chrome)
     window.addEventListener("resize", resize);
     if (window.visualViewport) {
       window.visualViewport.addEventListener("resize", resize);
@@ -81,13 +86,11 @@ export default function GameCanvas({ onUpdate }) {
       boostSpeed: -0.26,
     };
 
-    // 🎮 Keyboard Controls
     const handleKeyDown = (e) => (keys.current[e.key] = true);
     const handleKeyUp = (e) => (keys.current[e.key] = false);
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
 
-    // 🔁 Restart Handlers
     const restartGame = () => {
       setGameOver(false);
       obstaclesRef.current = [];
@@ -96,6 +99,8 @@ export default function GameCanvas({ onUpdate }) {
       distanceRef.current = 0;
       visualScrollRef.current = 0;
       visualSpeedRef.current = 0;
+      lastDistanceUpdateRef.current = 0;
+      lastDistanceValueRef.current = 0;
       rocket.x = gameCanvas.width / 2 - 20;
       rocket.vx = 0;
       rocket.vy = 0;
@@ -111,7 +116,6 @@ export default function GameCanvas({ onUpdate }) {
       if (gameOver) restartGame();
     });
 
-    // 📱 Touch + Swipe Controls
     let touchStartX = 0,
       touchStartY = 0;
     let touchActive = false;
@@ -121,7 +125,7 @@ export default function GameCanvas({ onUpdate }) {
       touchStartX = t.clientX;
       touchStartY = t.clientY;
       touchActive = true;
-      keys.current["ArrowUp"] = true; // Thrust when touching screen
+      keys.current["ArrowUp"] = true;
     }
 
     function handleTouchMove(e) {
@@ -130,16 +134,13 @@ export default function GameCanvas({ onUpdate }) {
       const dx = t.clientX - touchStartX;
       const dy = t.clientY - touchStartY;
 
-      // Reset all
       keys.current["ArrowLeft"] = false;
       keys.current["ArrowRight"] = false;
       keys.current["Shift"] = false;
 
-      // Horizontal movement
       if (dx > 30) keys.current["ArrowRight"] = true;
       else if (dx < -30) keys.current["ArrowLeft"] = true;
 
-      // Vertical up swipe = boost
       if (dy < -50) keys.current["Shift"] = true;
     }
 
@@ -163,7 +164,6 @@ export default function GameCanvas({ onUpdate }) {
     gameCanvas.addEventListener("touchend", handleTouchEnd);
     gameCanvas.addEventListener("touchcancel", handleTouchEnd);
 
-    // ----- Helpers -----
     function interpolateColor(color1, color2, factor) {
       const safe1 = typeof color1 === "string" ? color1 : "#000000";
       const safe2 = typeof color2 === "string" ? color2 : "#000000";
@@ -180,7 +180,6 @@ export default function GameCanvas({ onUpdate }) {
       )}, ${Math.round(b1 + (b2 - b1) * factor)})`;
     }
 
-    // ----- Layer helpers -----
     function getLayer(distance) {
       if (!Array.isArray(layersData) || layersData.length === 0) return 0;
       for (let i = 0; i < layersData.length - 1; i++) {
@@ -220,7 +219,7 @@ export default function GameCanvas({ onUpdate }) {
 
       return { current, next, factor, idx };
     }
-    // ----- StarField -----
+
     if (!starFieldRef.current)
       starFieldRef.current = new StarField(
         starCtx,
@@ -229,7 +228,6 @@ export default function GameCanvas({ onUpdate }) {
         160
       );
 
-    // ----- CloudField -----
     if (!cloudFieldRef.current)
       cloudFieldRef.current = new CloudField(
         starCtx,
@@ -238,7 +236,6 @@ export default function GameCanvas({ onUpdate }) {
         25
       );
 
-    // ----- Macro regions -----
     const macroRegions = [
       {
         name: "EARTH & ATMOSPHERE",
@@ -298,14 +295,14 @@ export default function GameCanvas({ onUpdate }) {
     function getDifficultySettings() {
       return gameMode === "hard"
         ? {
-            spawnMultiplier: 0.75, // faster spawns (more obstacles)
-            speedMultiplier: 1.5, // faster movement
-            hitboxMargin: 3.5, // tighter collision (harder)
+            spawnMultiplier: 0.75,
+            speedMultiplier: 1.5,
+            hitboxMargin: 3.5,
           }
         : {
-            spawnMultiplier: 1.3, // slower spawns (fewer obstacles)
-            speedMultiplier: 0.85, // slower movement
-            hitboxMargin: 7, // forgiving collision
+            spawnMultiplier: 1.3,
+            speedMultiplier: 0.85,
+            hitboxMargin: 7,
           };
     }
 
@@ -419,7 +416,6 @@ export default function GameCanvas({ onUpdate }) {
       });
     }
 
-    // ----- Particles: Sci-fi Plasma Burst -----
     function createPlasmaBurst(cx, cy) {
       particlesRef.current = [];
       const count = 48 + Math.floor(Math.random() * 24);
@@ -483,7 +479,6 @@ export default function GameCanvas({ onUpdate }) {
       ctx.restore();
     }
 
-    // ----- Distance advancement -----
     const PLAYER_MULT_NONE = 1;
     const PLAYER_MULT_UP = 2;
     const PLAYER_MULT_BOOST = 5;
@@ -547,7 +542,6 @@ export default function GameCanvas({ onUpdate }) {
       }
     }
 
-    // ----- Physics update -----
     function updatePhysics(deltaMs) {
       const upPressed = keys.current["ArrowUp"] || keys.current["w"];
       const boostPressed =
@@ -598,12 +592,10 @@ export default function GameCanvas({ onUpdate }) {
       if (visualScrollRef.current > 1e7) visualScrollRef.current %= 1e7;
     }
 
-    // ----- Draw rocket -----
     function drawRocket() {
       drawRocketObject(ctx, rocket);
     }
 
-    // ----- Main loop -----
     let lastTime = 0;
     function loop(timestamp) {
       if (!lastTime) lastTime = timestamp;
@@ -624,9 +616,8 @@ export default function GameCanvas({ onUpdate }) {
         getMacroRegionIndex(distanceRef.current)
       );
       drawObstacles();
-      // Draw clouds (visible at low altitudes only)
+
       if (cloudFieldRef.current) {
-        // Clouds fade out as you climb
         cloudFieldRef.current.setFade(distanceRef.current);
         const effectiveCloudAlpha = cloudFieldRef.current.fadeProgress;
 
@@ -686,7 +677,6 @@ export default function GameCanvas({ onUpdate }) {
 
       drawRocket();
 
-      //===============================================================================================
       {
         try {
           const movingUp =
@@ -697,13 +687,11 @@ export default function GameCanvas({ onUpdate }) {
               keys.current["ShiftLeft"] ||
               keys.current["ShiftRight"]);
 
-          // --- Color logic ---
-          const hue = boostActive ? 48 : movingUp ? 210 : 210; // warm gold for boost, blue-white otherwise
+          const hue = boostActive ? 48 : movingUp ? 210 : 210;
           const saturation = boostActive ? 100 : movingUp ? 70 : 40;
           const lightness = boostActive ? 70 : movingUp ? 85 : 90;
           const alpha = boostActive ? 0.8 : movingUp ? 0.45 : 0.2;
 
-          // --- Shape/size control ---
           const exhaustCount = boostActive ? 22 : movingUp ? 16 : 8;
           const exhaustLength = boostActive ? 140 : movingUp ? 100 : 50;
           const exhaustWidth = boostActive ? 1.8 : movingUp ? 1.3 : 0.8;
@@ -715,12 +703,10 @@ export default function GameCanvas({ onUpdate }) {
           ctx.globalAlpha = alpha;
 
           for (let i = 0; i < exhaustCount; i++) {
-            // Gentle jitter for turbulence look
             const jitterX = (Math.random() - 0.5) * rocket.w * 0.4;
             const startX = rocketCenterX + jitterX;
             const startY = rocketBottomY;
 
-            // More vertical exhaust — slightly flaring outward
             const controlX = startX + jitterX * 0.4;
             const controlY = startY + exhaustLength * 0.35;
             const endX = startX + jitterX * 0.7;
@@ -755,7 +741,6 @@ export default function GameCanvas({ onUpdate }) {
             ctx.stroke();
           }
 
-          // --- Core glow near rocket ---
           const coreGradient = ctx.createRadialGradient(
             rocketCenterX,
             rocketBottomY,
@@ -779,10 +764,8 @@ export default function GameCanvas({ onUpdate }) {
         }
       }
 
-      // === High-Speed Plasma Lines Around Rocket ===
-      // === High-Speed Plasma Lines Around Rocket ===
       if (!gameOver) {
-        const speed = visualSpeedRef.current * 100; // convert your speedRef into visible intensity
+        const speed = visualSpeedRef.current * 100;
 
         if (speed > 15) {
           const streakCount = Math.min(20, Math.floor(speed / 8));
@@ -792,7 +775,7 @@ export default function GameCanvas({ onUpdate }) {
 
           for (let i = 0; i < streakCount; i++) {
             const offsetX = (Math.random() - 0.5) * 40;
-            const tilt = (Math.random() - 0.5) * 0.3; // small angle tilt per line
+            const tilt = (Math.random() - 0.5) * 0.3;
             const x = rocket.x + rocket.w / 2 + offsetX;
             const y1 = rocket.y - streakLength / 2;
             const y2 = rocket.y + streakLength / 2;
@@ -821,20 +804,16 @@ export default function GameCanvas({ onUpdate }) {
         }
       }
 
-      // 4) particles (if explosion active)
       updateParticles(deltaMs);
       drawParticles();
 
-      // collision check (only active while not game over)
       if (!gameOver && checkCollision()) {
-        // create plasma burst at rocket center
         const cx = rocket.x + rocket.w / 2;
         const cy = rocket.y + rocket.h / 2;
         createPlasmaBurst(cx, cy);
-        //setGameOver(true);
+        setGameOver(true);
       }
 
-      // report HUD/parent
       const layerInfo =
         layersData[
           Math.max(
@@ -842,19 +821,89 @@ export default function GameCanvas({ onUpdate }) {
             Math.min(layersData.length - 1, getLayer(distanceRef.current))
           )
         ] || {};
+
+      const currentTime = timestamp;
+      const shouldUpdateDistance =
+        distanceRef.current < 1000 ||
+        currentTime - lastDistanceUpdateRef.current >= 1000;
+
+      if (shouldUpdateDistance) {
+        lastDistanceUpdateRef.current = currentTime;
+        lastDistanceValueRef.current = distanceRef.current;
+      }
+
+      function formatDistance(km) {
+        km = Number(km);
+
+        const units = [
+          { value: 1e3, symbol: "K" },
+          { value: 1e6, symbol: "M" },
+          { value: 1e9, symbol: "B" },
+          { value: 1e12, symbol: "T" },
+          { value: 1e15, symbol: "Q" },
+          { value: 1e18, symbol: "Qi" },
+          { value: 1e21, symbol: "Sx" },
+          { value: 1e24, symbol: "Sp" },
+        ];
+
+        if (km < 1000) {
+          return km.toLocaleString() + " km";
+        }
+
+        for (let i = units.length - 1; i >= 0; i--) {
+          if (km >= units[i].value) {
+            return (
+              (km / units[i].value).toFixed(1) + " " + units[i].symbol + " km"
+            );
+          }
+        }
+
+        return km.toLocaleString() + " km";
+      }
+
+      function formatAU(au) {
+        au = Number(au);
+
+        const units = [
+          { value: 1e3, symbol: "K" },
+          { value: 1e6, symbol: "M" },
+          { value: 1e9, symbol: "B" },
+          { value: 1e12, symbol: "T" },
+          { value: 1e15, symbol: "Q" },
+          { value: 1e18, symbol: "Qi" },
+          { value: 1e21, symbol: "Sx" },
+          { value: 1e24, symbol: "Sp" },
+        ];
+
+        if (au < 0.001) {
+          return au.toFixed(4);
+        }
+
+        if (au < 1000) {
+          return au.toFixed(3);
+        }
+
+        for (let i = units.length - 1; i >= 0; i--) {
+          if (au >= units[i].value) {
+            return (au / units[i].value).toFixed(3) + " " + units[i].symbol;
+          }
+        }
+
+        return au.toFixed(3);
+      }
+
       const regionName =
         macroRegions[getMacroRegionIndex(distanceRef.current)]?.name;
       onUpdate?.({
-        distanceKm: Math.floor(distanceRef.current),
-        distanceAU: (distanceRef.current / 1.496e8).toFixed(6),
+        distanceKm: Math.floor(lastDistanceValueRef.current),
+        distanceKmFormatted: formatDistance(lastDistanceValueRef.current),
+        distanceAU: formatAU(lastDistanceValueRef.current / 1.496e8),
         layer: layerInfo.name,
         place: layerInfo.place,
         region: regionName,
       });
 
-      // overlay gameover text with slight fade after explosion begins
       if (gameOver) {
-        // fade background overlay in proportion to explosion progress (t capped)
         const alpha = Math.min(0.7, 0.25 + explosionRef.current.t / 900);
         ctx.fillStyle = `rgba(0,0,0,${alpha})`;
         ctx.fillRect(0, 0, gameCanvas.width, gameCanvas.height);
@@ -880,7 +929,6 @@ export default function GameCanvas({ onUpdate }) {
 
     animationRef.current = requestAnimationFrame(loop);
 
-    // ----- Cleanup -----
     return () => {
       cancelAnimationFrame(animationRef.current);
       animationRef.current = null;
@@ -898,10 +946,8 @@ export default function GameCanvas({ onUpdate }) {
       gameCanvas.removeEventListener("touchend", handleTouchEnd);
       gameCanvas.removeEventListener("touchcancel", handleTouchEnd);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onUpdate, gameOver]);
 
-  // ----- JSX -----
   return (
     <div
       className="absolute inset-0"

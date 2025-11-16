@@ -5,16 +5,16 @@ export default function drawRocket(ctx, rocket) {
   const baseWidth = 40;
   const baseHeight = 80;
 
-  // ✅ Base scale responsive to canvas size
+
   let scaleFactor = Math.min(canvas.width / 1200, canvas.height / 800);
 
-  // ✅ Make rocket a bit bigger for smaller screens
+
   if (canvas.width <=375 ) {
-    scaleFactor *= 1.8; // Boost size on mobile
+    scaleFactor *= 1.8; 
   }else if(canvas.width < 768){
-    scaleFactor *= 1.6; // Bigger on small screens
+    scaleFactor *= 1.6; 
   } else if (canvas.width < 1024) {
-    scaleFactor *= 1.1; // Slightly bigger on tablets
+    scaleFactor *= 1.1; 
   }
 
   rocket.w = baseWidth * scaleFactor;
@@ -28,9 +28,7 @@ export default function drawRocket(ctx, rocket) {
   const h = rocket.h;
   const scale = Math.min(w / 30, h / 60);
 
-  // ---------------------------------------------------------
-  // 🚀 ROCKET BODY (same as before)
-  // ---------------------------------------------------------
+ 
   const noseGrad = ctx.createLinearGradient(-w / 2, -h / 2, w / 2, -h / 2);
   noseGrad.addColorStop(0, "#8b0000");
   noseGrad.addColorStop(0.3, "#ff1a1a");
@@ -79,7 +77,7 @@ export default function drawRocket(ctx, rocket) {
     ctx.stroke();
   }
 
-  // Window
+  
   const windowY = -h / 2 + h * 0.42;
   const windowRadius = w * 0.22;
   ctx.fillStyle = "#4a4a4a";
@@ -131,7 +129,7 @@ export default function drawRocket(ctx, rocket) {
   ctx.fillStyle = engineGrad;
   ctx.fillRect(-w / 2, h / 2 - h * 0.2, w, h * 0.12);
 
-  // Fins
+  
   const finGrad = ctx.createLinearGradient(0, h / 2 - h * 0.35, 0, h / 2);
   finGrad.addColorStop(0, "#707070");
   finGrad.addColorStop(0.5, "#909090");
@@ -176,12 +174,10 @@ export default function drawRocket(ctx, rocket) {
   ctx.fillStyle = "#0a0a0a";
   ctx.fillRect(-w * 0.25, h / 2 - h * 0.04, w * 0.5, h * 0.04);
 
-  // ---------------------------------------------------------
-  // 🔥 RESPONSIVE THRUSTER / FLAME (ADJUSTED)
-  // ---------------------------------------------------------
+  
   const thrustPower = Math.min(1, Math.abs(rocket.vy) / Math.abs(rocket.boostSpeed));
 
-  // Flames now scale better with screen size
+ 
   const flameScale =
     canvas.width < 768 ? 1.4 : canvas.width < 1024 ? 1.2 : 1.0;
 
@@ -194,7 +190,7 @@ export default function drawRocket(ctx, rocket) {
     scaleFactor *
     flameScale;
 
-  // Glow
+ 
   const glowGrad = ctx.createRadialGradient(
     0,
     h / 2 + flameHeight * 0.3,
@@ -210,7 +206,7 @@ export default function drawRocket(ctx, rocket) {
   ctx.arc(0, h / 2 + flameHeight * 0.3, flameHeight * 0.6, 0, Math.PI * 2);
   ctx.fill();
 
-  // Outer flame
+ 
   const outerFlameGrad = ctx.createRadialGradient(
     0,
     h / 2,
@@ -248,7 +244,7 @@ export default function drawRocket(ctx, rocket) {
   ctx.closePath();
   ctx.fill();
 
-  // Middle flame
+  
   const midFlameGrad = ctx.createRadialGradient(
     0,
     h / 2,
@@ -284,7 +280,7 @@ export default function drawRocket(ctx, rocket) {
   ctx.closePath();
   ctx.fill();
 
-  // Inner flame
+ 
   const coreGrad = ctx.createRadialGradient(
     0,
     h / 2,
@@ -315,7 +311,6 @@ export default function drawRocket(ctx, rocket) {
   ctx.closePath();
   ctx.fill();
 
-  // Body highlight
   ctx.strokeStyle = "rgba(255, 255, 255, 0.6)";
   ctx.lineWidth = Math.max(1, scale * 0.8);
   ctx.beginPath();
