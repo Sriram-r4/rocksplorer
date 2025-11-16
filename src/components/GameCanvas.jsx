@@ -33,7 +33,7 @@ export default function GameCanvas({ onUpdate }) {
       }
     }
 
-    updateGameMode(); 
+    updateGameMode();
     window.addEventListener("resize", updateGameMode);
 
     return () => window.removeEventListener("resize", updateGameMode);
@@ -908,22 +908,83 @@ export default function GameCanvas({ onUpdate }) {
         ctx.fillStyle = `rgba(0,0,0,${alpha})`;
         ctx.fillRect(0, 0, gameCanvas.width, gameCanvas.height);
 
-        ctx.fillStyle = "white";
-        ctx.font = "48px sans-serif";
+        const centerX = gameCanvas.width / 2;
+        const centerY = gameCanvas.height / 2;
+        const scale = Math.min(gameCanvas.width / 600, 1); 
+
+      
+        ctx.fillStyle = "#ff4444";
+        ctx.font = `bold ${56 * scale}px sans-serif`;
         ctx.textAlign = "center";
-        ctx.fillText(
-          "GAME OVER",
-          gameCanvas.width / 2,
-          gameCanvas.height / 2 - 20
-        );
-        ctx.font = "22px sans-serif";
+        ctx.textBaseline = "middle";
+        ctx.fillText("GAME OVER", centerX, centerY - 180 * scale);
+
+       
+        ctx.font = `${24 * scale}px sans-serif`;
+        ctx.fillStyle = "#ffffff";
         ctx.fillText(
           "Click or press 'R' to restart",
-          gameCanvas.width / 2,
-          gameCanvas.height / 2 + 24
+          centerX,
+          centerY - 130 * scale
         );
-      }
 
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
+        ctx.lineWidth = 2 * scale;
+        ctx.beginPath();
+        ctx.moveTo(centerX - 200 * scale, centerY - 90 * scale);
+        ctx.lineTo(centerX + 200 * scale, centerY - 90 * scale);
+        ctx.stroke();
+
+        ctx.font = `bold ${22 * scale}px sans-serif`;
+        ctx.fillStyle = "#60a5fa";
+        ctx.fillText(
+          "Thank You for Playing! Rocksplorer 🚀",
+          centerX,
+          centerY - 50 * scale
+        );
+
+      
+        ctx.font = `${16 * scale}px sans-serif`;
+        ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
+        const lineHeight = 24 * scale;
+        let currentY = centerY - 10 * scale;
+
+        const messages = [
+          "We hope you had an amazing time exploring our universe.",
+          "This is just the beginning  the game is still evolving,",
+          "and some elements may not be fully polished yet.",
+          "",
+          "Our team is actively working to improve the experience,",
+          "and we're excited to bring you **Version 2** soon!",
+          "",
+          "Your support means the world to us. \u{1F31F}",
+          "Stay tuned, explorer - the adventure continues!",
+        ];
+
+        messages.forEach((line) => {
+          ctx.fillText(line, centerX, currentY);
+          currentY += lineHeight;
+        });
+
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
+        ctx.lineWidth = 2 * scale;
+        ctx.beginPath();
+        ctx.moveTo(centerX - 200 * scale, currentY + 10 * scale);
+        ctx.lineTo(centerX + 200 * scale, currentY + 10 * scale);
+        ctx.stroke();
+
+        ctx.font = `${18 * scale}px sans-serif`;
+        ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+        ctx.fillText(
+          "Developed by Sriram \u{1F60A}, [github.com/Sriram-r4]",
+          centerX,
+          currentY + 40 * scale
+        );
+
+        ctx.font = `${12 * scale}px monospace`;
+        ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+        ctx.fillText("Version 1.0.0 Beta", centerX, currentY + 65 * scale);
+      }
       animationRef.current = requestAnimationFrame(loop);
     }
 
