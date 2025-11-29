@@ -112,7 +112,7 @@ export default function GameCanvas({ onUpdate }) {
     window.addEventListener("keydown", (e) => {
       if (gameOver && (e.key === "r" || e.key === "R")) restartGame();
     });
-    window.addEventListener("click", () => {
+    window.addEventListener("dblclick", () => {
       if (gameOver) restartGame();
     });
 

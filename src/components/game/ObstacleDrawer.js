@@ -1,10 +1,8 @@
-// ObstacleDrawer.js - Enhanced realistic space obstacles with responsive scaling
-
 export class ObstacleDrawer {
   static draw(ctx, obs) {
     const { x, y, size, type, rotation = 0 } = obs;
 
-    // --- Responsive scaling ---
+   
     let scaleFactor = 1;
     const w = window.innerWidth;
 
@@ -60,10 +58,10 @@ export class ObstacleDrawer {
     ctx.restore();
   }
 
-  // === EARTH & ATMOSPHERE REGION ===
+  
   
   static drawSatellite(ctx, x, y, size) {
-    // Main body with metallic look
+    
     const bodyGrad = ctx.createLinearGradient(x, y, x + size, y + size * 0.6);
     bodyGrad.addColorStop(0, "rgba(220,230,255,0.95)");
     bodyGrad.addColorStop(0.5, "rgba(180,200,240,0.95)");
@@ -71,7 +69,7 @@ export class ObstacleDrawer {
     ctx.fillStyle = bodyGrad;
     ctx.fillRect(x, y, size, size * 0.6);
 
-    // Solar panels with gradient
+  
     const panelGrad = ctx.createLinearGradient(x - size * 0.4, y, x - size * 0.05, y);
     panelGrad.addColorStop(0, "rgba(40,80,150,0.9)");
     panelGrad.addColorStop(0.5, "rgba(60,110,190,0.9)");
@@ -81,7 +79,7 @@ export class ObstacleDrawer {
     ctx.fillRect(x - size * 0.5, y + size * 0.05, size * 0.45, size * 0.5);
     ctx.fillRect(x + size + size * 0.05, y + size * 0.05, size * 0.45, size * 0.5);
 
-    // Panel details
+   
     ctx.strokeStyle = "rgba(20,40,80,0.6)";
     ctx.lineWidth = Math.max(0.5, size * 0.02);
     for (let i = 0; i < 3; i++) {
@@ -90,7 +88,7 @@ export class ObstacleDrawer {
       ctx.strokeRect(x + size + size * 0.05, y + size * 0.05 + offset, size * 0.45, size * 0.15);
     }
 
-    // Antenna with glow
+    
     ctx.strokeStyle = "rgba(180,200,255,0.9)";
     ctx.lineWidth = Math.max(1.5, size * 0.06);
     ctx.beginPath();
@@ -98,7 +96,7 @@ export class ObstacleDrawer {
     ctx.lineTo(x + size * 0.5, y - size * 0.5);
     ctx.stroke();
 
-    // Antenna tip
+    
     ctx.fillStyle = "rgba(255,100,100,0.9)";
     ctx.beginPath();
     ctx.arc(x + size * 0.5, y - size * 0.5, size * 0.08, 0, Math.PI * 2);
@@ -106,7 +104,7 @@ export class ObstacleDrawer {
   }
 
   static drawDebris(ctx, x, y, size) {
-    // Irregular metallic debris
+   
     ctx.fillStyle = "rgba(160,150,140,0.9)";
     ctx.beginPath();
     ctx.moveTo(x, y);
@@ -118,12 +116,12 @@ export class ObstacleDrawer {
     ctx.closePath();
     ctx.fill();
 
-    // Darker edges
+   
     ctx.strokeStyle = "rgba(80,75,70,0.8)";
     ctx.lineWidth = Math.max(1, size * 0.04);
     ctx.stroke();
 
-    // Damage marks
+    
     ctx.fillStyle = "rgba(100,90,80,0.7)";
     ctx.beginPath();
     ctx.arc(x + size * 0.3, y + size * 0.3, size * 0.1, 0, Math.PI * 2);
@@ -131,7 +129,7 @@ export class ObstacleDrawer {
   }
 
   static drawJunk(ctx, x, y, size) {
-    // Space junk with panels
+   
     ctx.fillStyle = "rgba(180,180,190,0.9)";
     ctx.fillRect(x, y, size * 0.7, size * 0.5);
     
@@ -142,7 +140,7 @@ export class ObstacleDrawer {
     ctx.lineWidth = Math.max(1, size * 0.05);
     ctx.strokeRect(x, y, size * 0.7, size * 0.5);
 
-    // Wire/cable
+    
     ctx.strokeStyle = "rgba(120,120,130,0.6)";
     ctx.lineWidth = Math.max(0.5, size * 0.03);
     ctx.beginPath();
@@ -151,10 +149,10 @@ export class ObstacleDrawer {
     ctx.stroke();
   }
 
-  // === EARTH ORBIT & SOLAR SYSTEM REGION ===
+ 
   
   static drawAsteroid(ctx, x, y, size) {
-    // Rocky texture with craters
+   
     const rockGrad = ctx.createRadialGradient(
       x + size * 0.4, y + size * 0.4, size * 0.1,
       x + size * 0.5, y + size * 0.5, size * 0.6
@@ -168,7 +166,7 @@ export class ObstacleDrawer {
     ctx.arc(x + size * 0.5, y + size * 0.5, size * 0.5, 0, Math.PI * 2);
     ctx.fill();
 
-    // Multiple craters
+   
     ctx.fillStyle = "rgba(60,50,45,0.8)";
     const craters = [
       {cx: 0.3, cy: 0.3, r: 0.12},
@@ -182,7 +180,7 @@ export class ObstacleDrawer {
       ctx.fill();
     });
 
-    // Rough edge highlights
+   
     ctx.strokeStyle = "rgba(160,140,120,0.4)";
     ctx.lineWidth = Math.max(0.5, size * 0.02);
     ctx.beginPath();
@@ -191,7 +189,7 @@ export class ObstacleDrawer {
   }
 
   static drawComet(ctx, x, y, size) {
-    // Glowing tail
+   
     const tailGrad = ctx.createLinearGradient(x - size * 2.5, y, x + size, y);
     tailGrad.addColorStop(0, "rgba(100,150,255,0)");
     tailGrad.addColorStop(0.3, "rgba(150,200,255,0.3)");
@@ -203,7 +201,7 @@ export class ObstacleDrawer {
     ctx.ellipse(x, y + size * 0.2, size * 2.5, size * 0.6, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Secondary tail
+  
     const tail2Grad = ctx.createLinearGradient(x - size * 2, y - size * 0.3, x + size, y);
     tail2Grad.addColorStop(0, "rgba(200,150,255,0)");
     tail2Grad.addColorStop(0.5, "rgba(220,180,255,0.4)");
@@ -214,7 +212,7 @@ export class ObstacleDrawer {
     ctx.ellipse(x, y, size * 2, size * 0.4, -0.2, 0, Math.PI * 2);
     ctx.fill();
 
-    // Nucleus with glow
+   
     const nucleusGrad = ctx.createRadialGradient(
       x + size * 0.5, y + size * 0.2, size * 0.1,
       x + size * 0.5, y + size * 0.2, size * 0.5
@@ -230,7 +228,7 @@ export class ObstacleDrawer {
   }
 
   static drawMoon(ctx, x, y, size) {
-    // Moon surface with gradient
+   
     const moonGrad = ctx.createRadialGradient(
       x + size * 0.35, y + size * 0.35, size * 0.1,
       x + size * 0.5, y + size * 0.5, size * 0.6
@@ -244,7 +242,7 @@ export class ObstacleDrawer {
     ctx.arc(x + size * 0.5, y + size * 0.5, size * 0.6, 0, Math.PI * 2);
     ctx.fill();
 
-    // Large craters
+   
     ctx.fillStyle = "rgba(130,130,140,0.8)";
     const craters = [
       {cx: 0.25, cy: 0.3, r: 0.15},
@@ -258,7 +256,7 @@ export class ObstacleDrawer {
       ctx.arc(x + size * c.cx, y + size * c.cy, size * c.r, 0, Math.PI * 2);
       ctx.fill();
       
-      // Crater rim highlight
+      
       ctx.strokeStyle = "rgba(240,240,245,0.4)";
       ctx.lineWidth = Math.max(0.5, size * 0.015);
       ctx.beginPath();
@@ -267,10 +265,10 @@ export class ObstacleDrawer {
     });
   }
 
-  // === INTERSTELLAR SPACE REGION ===
+  
   
   static drawNebula(ctx, x, y, size) {
-    // Colorful gas cloud - random color scheme
+   
     const colorSchemes = [
       ["rgba(255,100,150,0.7)", "rgba(200,50,100,0.4)", "rgba(150,30,80,0)"],
       ["rgba(100,150,255,0.7)", "rgba(50,100,200,0.4)", "rgba(30,80,150,0)"],
@@ -280,7 +278,7 @@ export class ObstacleDrawer {
     
     const colorSet = colorSchemes[Math.floor(Math.random() * colorSchemes.length)];
     
-    // Multiple overlapping gas clouds
+   
     for (let i = 0; i < 4; i++) {
       const offsetX = (Math.random() - 0.5) * size * 0.4;
       const offsetY = (Math.random() - 0.5) * size * 0.4;
@@ -298,7 +296,7 @@ export class ObstacleDrawer {
       ctx.fill();
     }
 
-    // Stars within nebula
+    
     ctx.fillStyle = "rgba(255,255,255,0.9)";
     for (let i = 0; i < 8; i++) {
       const sx = x + Math.random() * size;
@@ -309,10 +307,10 @@ export class ObstacleDrawer {
     }
   }
 
-  // === COSMIC SCALE REGION ===
+ 
   
   static drawPulsar(ctx, x, y, size) {
-    // Rotating neutron star with beams
+    
     const coreGrad = ctx.createRadialGradient(
       x + size * 0.5, y + size * 0.5, size * 0.05,
       x + size * 0.5, y + size * 0.5, size * 0.35
@@ -327,7 +325,7 @@ export class ObstacleDrawer {
     ctx.arc(x + size * 0.5, y + size * 0.5, size * 0.35, 0, Math.PI * 2);
     ctx.fill();
 
-    // Radiation beams
+    
     ctx.strokeStyle = "rgba(150,200,255,0.7)";
     ctx.lineWidth = Math.max(2, size * 0.08);
     ctx.beginPath();
@@ -337,7 +335,7 @@ export class ObstacleDrawer {
     ctx.lineTo(x + size * 0.5, y + size * 1.6);
     ctx.stroke();
 
-    // Magnetic field lines
+    
     ctx.strokeStyle = "rgba(100,150,255,0.4)";
     ctx.lineWidth = Math.max(1, size * 0.03);
     for (let i = 0; i < 2; i++) {
@@ -348,13 +346,13 @@ export class ObstacleDrawer {
   }
 
   static drawBlackHole(ctx, x, y, size) {
-    // Event horizon
+    
     ctx.fillStyle = "rgba(0,0,0,1)";
     ctx.beginPath();
     ctx.arc(x + size * 0.5, y + size * 0.5, size * 0.25, 0, Math.PI * 2);
     ctx.fill();
 
-    // Accretion disk with multiple layers
+   
     for (let i = 3; i > 0; i--) {
       const diskGrad = ctx.createRadialGradient(
         x + size * 0.5, y + size * 0.5, size * 0.25,
@@ -371,7 +369,7 @@ export class ObstacleDrawer {
       ctx.fill();
     }
 
-    // Gravitational lensing effect
+   
     ctx.strokeStyle = "rgba(100,150,255,0.3)";
     ctx.lineWidth = Math.max(1, size * 0.02);
     for (let i = 1; i <= 3; i++) {
@@ -382,7 +380,7 @@ export class ObstacleDrawer {
   }
 }
 
-// Helper function to get responsive scale factor (used in collision detection)
+
 export function getResponsiveScale() {
   const w = window.innerWidth;
   if (w <= 400) return 1.8;
