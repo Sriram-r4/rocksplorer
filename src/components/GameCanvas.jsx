@@ -923,7 +923,7 @@ export default function GameCanvas({ onUpdate }) {
         ctx.font = `${24 * scale}px sans-serif`;
         ctx.fillStyle = "#ffffff";
         ctx.fillText(
-          "Click or press 'R' to restart",
+          "Double Click or press 'R' to restart",
           centerX,
           centerY - 130 * scale
         );
@@ -983,7 +983,7 @@ export default function GameCanvas({ onUpdate }) {
 
         ctx.font = `${12 * scale}px monospace`;
         ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
-        ctx.fillText("Version 1.0.0 Beta", centerX, currentY + 65 * scale);
+        ctx.fillText("Version 1.1.0 Beta", centerX, currentY + 65 * scale);
       }
       animationRef.current = requestAnimationFrame(loop);
     }
